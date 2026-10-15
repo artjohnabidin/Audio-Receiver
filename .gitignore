@@ -1,0 +1,18 @@
+# Flutter and Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+/coverage/
+/lib/generated_plugin_registrant.dart
+
+# Local configuration
+/env.json
+
+# IDE and operating system files
+.idea/
+*.iml
+.DS_Store
