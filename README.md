@@ -21,6 +21,22 @@ offer; remote ICE waits for the answer. Click **Enable audio** after the remote
 track arrives to satisfy browser playback restrictions. The listener does not
 request microphone access. This implementation supports one listener per stream.
 
+## Local speech-to-text
+
+After the remote audio track arrives, click **Start transcription** to run
+English streaming speech recognition locally in the browser with sherpa-onnx
+WebAssembly. Audio stays in the browser and is not sent to a speech provider.
+The first use downloads an approximately 44 MB English model from a pinned
+[Apache-2.0 Hugging Face model revision](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/tree/d42f2d9f7ca24806fb667456a18a9f1b60f70d16);
+this 2023 model uses sherpa's `zipformer` model type, not `zipformer2`. Model
+inference uses the listener's CPU. No API key or per-minute STT charge is
+required. The listener's browser must have enough memory and processing
+capacity for the model, and a slow device may show more transcription delay.
+
+Transcription reads the existing remote WebRTC audio and does not request
+microphone permission. It is independent of the **Enable audio** playback
+control. Disconnecting or leaving the room stops the recognizer.
+
 ## ICE Servers
 
 The default Google STUN server is useful for local testing but cannot connect

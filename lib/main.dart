@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'audio_receiver.dart';
 import 'signaling.dart';
+import 'speech_transcriber.dart';
 
 // Provide via: flutter run -d chrome --dart-define-from-file=env.json
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
@@ -49,6 +51,8 @@ class ReceiverPage extends StatefulWidget {
 class _ReceiverPageState extends State<ReceiverPage> {
   final _roomController = TextEditingController(text: 'event-1');
   AudioReceiver? _receiver;
+  SpeechTranscriber? _transcriber;
+  VoidCallback? _audioAvailabilityListener;
 
   bool get _configured => supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
@@ -64,6 +68,14 @@ class _ReceiverPageState extends State<ReceiverPage> {
         iceServers: iceServers,
       );
       setState(() => _receiver = receiver);
+      void onAudioAvailabilityChanged() {
+        if (!receiver.audioAvailable.value) {
+          unawaited(_stopTranscription());
+        }
+      }
+
+      _audioAvailabilityListener = onAudioAvailabilityChanged;
+      receiver.audioAvailable.addListener(onAudioAvailabilityChanged);
       await receiver.start();
     } catch (e) {
       if (!mounted) return;
@@ -76,8 +88,67 @@ class _ReceiverPageState extends State<ReceiverPage> {
 
   Future<void> _stop() async {
     final receiver = _receiver;
+    final listener = _audioAvailabilityListener;
+    if (receiver != null && listener != null) {
+      receiver.audioAvailable.removeListener(listener);
+    }
+    _audioAvailabilityListener = null;
+    await _stopTranscription();
     setState(() => _receiver = null);
     await receiver?.stop();
+  }
+
+  Future<void> _toggleTranscription(AudioReceiver receiver) async {
+    if (_transcriber != null) {
+      await _stopTranscription();
+      return;
+    }
+    final stream = receiver.remoteWebStream;
+    if (stream == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Remote audio is not available yet')),
+      );
+      return;
+    }
+    final transcriber = SpeechTranscriber();
+    setState(() => _transcriber = transcriber);
+    try {
+      await transcriber.start(stream);
+    } catch (error) {
+      if (transcriber.isStopped) {
+        transcriber.dispose();
+        return;
+      }
+      if (!mounted) {
+        transcriber.dispose();
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Transcription failed: $error')));
+      if (identical(_transcriber, transcriber)) {
+        setState(() => _transcriber = null);
+      }
+      await transcriber.stop();
+      transcriber.dispose();
+    }
+  }
+
+  Future<void> _stopTranscription() async {
+    final transcriber = _transcriber;
+    if (transcriber == null) return;
+    if (mounted) setState(() => _transcriber = null);
+    try {
+      await transcriber.stop();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not stop transcription: $error')),
+        );
+      }
+    } finally {
+      transcriber.dispose();
+    }
   }
 
   Future<void> _enableAudio(AudioReceiver receiver) async {
@@ -93,6 +164,20 @@ class _ReceiverPageState extends State<ReceiverPage> {
 
   @override
   void dispose() {
+    final receiver = _receiver;
+    final listener = _audioAvailabilityListener;
+    if (receiver != null && listener != null) {
+      receiver.audioAvailable.removeListener(listener);
+    }
+    final transcriber = _transcriber;
+    if (transcriber != null) {
+      unawaited(
+        transcriber.stop().catchError((Object error) {
+          debugPrint('Could not stop transcription: $error');
+        }),
+      );
+      transcriber.dispose();
+    }
     _receiver?.stop();
     _roomController.dispose();
     super.dispose();
@@ -167,6 +252,87 @@ class _ReceiverPageState extends State<ReceiverPage> {
                               ),
                             )
                           : const SizedBox.shrink(),
+                    ),
+                    ValueListenableBuilder(
+                      valueListenable: receiver.audioAvailable,
+                      builder: (_, available, _) => !available
+                          ? const SizedBox.shrink()
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () =>
+                                        _toggleTranscription(receiver),
+                                    icon: Icon(
+                                      _transcriber == null
+                                          ? Icons.record_voice_over
+                                          : Icons.stop,
+                                    ),
+                                    label: Text(
+                                      _transcriber == null
+                                          ? 'Start transcription'
+                                          : 'Stop transcription',
+                                    ),
+                                  ),
+                                ),
+                                if (_transcriber case final transcriber?)
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      ValueListenableBuilder(
+                                        valueListenable: transcriber.status,
+                                        builder: (_, value, _) => Text(
+                                          value,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      SizedBox(
+                                        height: 160,
+                                        child: Card(
+                                          margin: EdgeInsets.zero,
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              children: [
+                                                Text(
+                                                  'Live transcript',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.titleSmall,
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Expanded(
+                                                  child: ValueListenableBuilder(
+                                                    valueListenable:
+                                                        transcriber.transcript,
+                                                    builder: (_, text, _) =>
+                                                        SingleChildScrollView(
+                                                          reverse: true,
+                                                          child: SelectableText(
+                                                            text.isEmpty
+                                                                ? 'Transcript will appear here'
+                                                                : text,
+                                                          ),
+                                                        ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
                     ),
                     // Hidden renderer; required for the browser to play remote audio.
                     SizedBox(

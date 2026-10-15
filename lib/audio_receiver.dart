@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:flutter/foundation.dart';
+import 'package:dart_webrtc/dart_webrtc.dart' show MediaStreamWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web/web.dart' as web;
 
@@ -31,6 +32,10 @@ class AudioReceiver {
   final renderer = RTCVideoRenderer();
 
   RTCPeerConnection? _pc;
+  web.MediaStream? _remoteWebStream;
+
+  web.MediaStream? get remoteWebStream => _remoteWebStream;
+
   String? _remoteId;
   String? _sessionId;
   bool _remoteDescriptionSet = false;
@@ -193,6 +198,7 @@ class AudioReceiver {
       if (event.streams.isEmpty) await stream.addTrack(event.track);
       if (_pc != pc) return;
       event.track.enabled = true;
+      _remoteWebStream = (stream as MediaStreamWeb).jsStream;
       renderer.srcObject = stream;
       renderer.muted = true;
       audioAvailable.value = true;
@@ -303,6 +309,7 @@ class AudioReceiver {
     _remoteDescriptionSet = false;
     _pendingCandidates.clear();
     audioAvailable.value = false;
+    _remoteWebStream = null;
     renderer.srcObject = null;
     final pc = _pc;
     _pc = null;
