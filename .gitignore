@@ -7,6 +7,7 @@
 .pub/
 /build/
 /coverage/
+/doc/api/
 /lib/generated_plugin_registrant.dart
 
 # Local configuration
