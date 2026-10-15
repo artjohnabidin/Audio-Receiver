@@ -2,12 +2,15 @@
 library;
 
 import 'dart:async';
+import 'dart:js_interop';
 
 import 'package:audio_receiver/audio_receiver.dart';
 import 'package:audio_receiver/signaling.dart';
+import 'package:dart_webrtc/dart_webrtc.dart' show MediaStreamWeb;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:web/web.dart' as web;
 
 class LocalSignaling extends SupabaseSignaling {
   LocalSignaling()
@@ -20,6 +23,7 @@ class LocalSignaling extends SupabaseSignaling {
   final ready = StreamController<void>.broadcast();
   final sent = <SignalingMessage>[];
   final pendingCandidates = <RTCIceCandidate>[];
+  web.AudioContext? audioContext;
   RTCPeerConnection? broadcaster;
   bool remoteDescriptionSet = false;
   bool rejectJoin = false;
@@ -129,9 +133,21 @@ class LocalSignaling extends SupabaseSignaling {
     };
   }
 
+  Future<void> createBroadcasterWithAudio() async {
+    await createBroadcaster();
+    audioContext = web.AudioContext();
+    final audioStream = audioContext!.createMediaStreamDestination().stream;
+    final stream = MediaStreamWeb(audioStream, 'test-broadcaster');
+    await broadcaster!.addTrack(stream.getAudioTracks().single, stream);
+  }
+
   @override
   Future<void> dispose() async {
     await broadcaster?.close();
+    final context = audioContext;
+    if (context != null && context.state != 'closed') {
+      await context.close().toDart;
+    }
     await incoming.close();
     await ready.close();
     await client.dispose();
@@ -214,6 +230,25 @@ void main() {
       await receiver.stop();
       expect(receiver.state.value, ReceiverState.disconnected);
       expect(receiver.renderer.srcObject, isNull);
+    },
+  );
+
+  test(
+    'exposes the remote browser stream and clears it on peer departure',
+    () async {
+      final signaling = LocalSignaling();
+      final receiver = AudioReceiver(signaling, iceServers: const []);
+      addTearDown(receiver.stop);
+      await signaling.createBroadcasterWithAudio();
+      await receiver.start();
+      signaling.announce();
+
+      await waitFor(() => receiver.audioAvailable.value);
+      expect(receiver.remoteWebStream, isNotNull);
+
+      signaling.announce(type: SignalingMessageType.peerLeft);
+      await waitFor(() => !receiver.audioAvailable.value);
+      expect(receiver.remoteWebStream, isNull);
     },
   );
 }

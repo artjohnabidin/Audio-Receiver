@@ -1,0 +1,14 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+/build/
+/coverage/
+/doc/api/
+
+.DS_Store
+.idea/
+*.iml
+
+/env.json
