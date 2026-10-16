@@ -223,23 +223,15 @@ class _ReceiverPageState extends State<ReceiverPage> {
                     label: Text(receiver == null ? 'Connect' : 'Leave'),
                   ),
                   const SizedBox(height: 16),
-                  if (receiver != null) ...[
+                  if (receiver == null)
+                    const _ConnectionStatus()
+                  else
                     ValueListenableBuilder(
                       valueListenable: receiver.state,
-                      builder: (_, state, _) {
-                        final label = switch (state) {
-                          ReceiverState.connecting => 'Connecting',
-                          ReceiverState.waitingForBroadcaster =>
-                            'Waiting for Broadcaster',
-                          ReceiverState.connected => 'Connected',
-                          ReceiverState.disconnected => 'Disconnected',
-                        };
-                        return Text(
-                          'Status: $label',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        );
-                      },
+                      builder: (_, state, _) => _ConnectionStatus(state: state),
                     ),
+                  const SizedBox(height: 16),
+                  if (receiver != null) ...[
                     ValueListenableBuilder(
                       valueListenable: receiver.audioAvailable,
                       builder: (_, available, _) => available
@@ -340,22 +332,88 @@ class _ReceiverPageState extends State<ReceiverPage> {
                       height: 1,
                       child: RTCVideoView(receiver.renderer),
                     ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: ValueListenableBuilder(
-                        valueListenable: receiver.log,
-                        builder: (_, lines, _) => ListView(
-                          children: [
-                            for (final l in lines)
-                              Text(l, style: const TextStyle(fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _ConnectionStatus extends StatelessWidget {
+  const _ConnectionStatus({this.state});
+
+  final ReceiverState? state;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (title, description, icon, color) = switch (state) {
+      null => (
+        'Ready to connect',
+        'Choose a room to start listening.',
+        Icons.headphones,
+        scheme.primary,
+      ),
+      ReceiverState.connecting => (
+        'Connecting',
+        'Establishing a signaling connection.',
+        Icons.sync,
+        scheme.primary,
+      ),
+      ReceiverState.waitingForBroadcaster => (
+        'Waiting for broadcaster',
+        'Connected to the room. Waiting for live audio.',
+        Icons.hourglass_top,
+        scheme.tertiary,
+      ),
+      ReceiverState.connected => (
+        'Audio connected',
+        'The live audio stream is ready.',
+        Icons.graphic_eq,
+        Colors.green.shade700,
+      ),
+      ReceiverState.disconnected => (
+        'Disconnected',
+        'The connection ended. Reconnect to continue listening.',
+        Icons.link_off,
+        scheme.error,
+      ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.circle, size: 10, color: color),
+        ],
+      ),
     );
   }
 }
