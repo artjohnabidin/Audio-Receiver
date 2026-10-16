@@ -214,57 +214,34 @@ class _ReceiverPageState extends State<ReceiverPage> {
                           label: Text(receiver == null ? 'Connect' : 'Leave'),
                         ),
                         const SizedBox(height: 16),
-                        if (receiver != null) ...[
+                        if (receiver == null)
+                          const _ConnectionStatus()
+                        else
                           ValueListenableBuilder(
                             valueListenable: receiver.state,
-                            builder: (_, state, _) {
-                              final label = switch (state) {
-                                ReceiverState.connecting => 'Connecting',
-                                ReceiverState.waitingForBroadcaster =>
-                                  'Waiting for Broadcaster',
-                                ReceiverState.connected => 'Connected',
-                                ReceiverState.disconnected => 'Disconnected',
-                              };
-                              return Text(
-                                'Status: $label',
-                                style: Theme.of(context).textTheme.titleMedium,
-                              );
-                            },
-                          ),
-                          ValueListenableBuilder(
-                            valueListenable: receiver.audioAvailable,
-                            builder: (_, available, _) => available
-                                ? Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: FilledButton.icon(
-                                      onPressed: () => _enableAudio(receiver),
-                                      icon: const Icon(Icons.volume_up),
-                                      label: const Text('Enable audio'),
-                                    ),
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                          // Hidden renderer; required for the browser to play remote audio.
-                          SizedBox(
-                            width: 1,
-                            height: 1,
-                            child: RTCVideoView(receiver.renderer),
-                          ),
-                          const SizedBox(height: 8),
-                          Expanded(
-                            child: ValueListenableBuilder(
-                              valueListenable: receiver.log,
-                              builder: (_, lines, _) => ListView(
-                                children: [
-                                  for (final l in lines)
-                                    Text(
-                                      l,
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                ],
-                              ),
+                            builder: (_, state, _) => _ConnectionStatus(state: state),
                             ),
-                          ),
+                          const SizedBox(height: 16),
+                          if (receiver != null) ...[
+                            ValueListenableBuilder(
+                              valueListenable: receiver.audioAvailable,
+                              builder: (_, available, _) => available
+                                  ? Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: FilledButton.icon(
+                                        onPressed: () => _enableAudio(receiver),
+                                        icon: const Icon(Icons.volume_up),
+                                        label: const Text('Enable audio'),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                            // Hidden renderer; required for the browser to play remote audio.
+                            SizedBox(
+                              width: 1,
+                              height: 1,
+                              child: RTCVideoView(receiver.renderer),
+                            ),
                         ],
                       ],
                     ),
