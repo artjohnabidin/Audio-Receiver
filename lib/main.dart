@@ -179,125 +179,136 @@ class _ReceiverPageState extends State<ReceiverPage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: const Text('WebRTC Audio Receiver'),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: !_configured
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Missing Supabase config.\nRun with --dart-define-from-file=env.json',
-                        textAlign: TextAlign.center,
+      body: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          children: [
+            if (!_configured)
+              const Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Missing Supabase config.\nRun with --dart-define-from-file=env.json',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: constraints.maxHeight * 0.45,
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: .stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: _roomController,
+                        enabled: receiver == null,
+                        decoration: const InputDecoration(
+                          labelText: 'Room ID',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: .stretch,
-                      children: [
-                        TextField(
-                          controller: _roomController,
-                          enabled: receiver == null,
-                          decoration: const InputDecoration(
-                            labelText: 'Room ID',
-                            border: OutlineInputBorder(),
-                          ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: receiver == null ? _start : _stop,
+                        icon: Icon(
+                          receiver == null ? Icons.headphones : Icons.stop,
                         ),
-                        const SizedBox(height: 12),
-                        FilledButton.icon(
-                          onPressed: receiver == null ? _start : _stop,
-                          icon: Icon(
-                            receiver == null ? Icons.headphones : Icons.stop,
-                          ),
-                          label: Text(receiver == null ? 'Connect' : 'Leave'),
+                        label: Text(receiver == null ? 'Connect' : 'Leave'),
+                      ),
+                      const SizedBox(height: 16),
+                      if (receiver == null)
+                        const _ConnectionStatus()
+                      else
+                        ValueListenableBuilder(
+                          valueListenable: receiver.state,
+                          builder: (_, state, _) =>
+                              _ConnectionStatus(state: state),
                         ),
-                        const SizedBox(height: 16),
-                        if (receiver == null)
-                          const _ConnectionStatus()
-                        else
-                          ValueListenableBuilder(
-                            valueListenable: receiver.state,
-                            builder: (_, state, _) => _ConnectionStatus(state: state),
-                            ),
-                          const SizedBox(height: 16),
-                          if (receiver != null) ...[
-                            ValueListenableBuilder(
-                              valueListenable: receiver.audioAvailable,
-                              builder: (_, available, _) => available
-                                  ? Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: FilledButton.icon(
-                                        onPressed: () => _enableAudio(receiver),
-                                        icon: const Icon(Icons.volume_up),
-                                        label: const Text('Enable audio'),
-                                      ),
-                                    )
-                                  : const SizedBox.shrink(),
-                            ),
-                            // Hidden renderer; required for the browser to play remote audio.
-                            SizedBox(
-                              width: 1,
-                              height: 1,
-                              child: RTCVideoView(receiver.renderer),
-                            ),
-                        ],
+                      const SizedBox(height: 16),
+                      if (receiver != null) ...[
+                        ValueListenableBuilder(
+                          valueListenable: receiver.audioAvailable,
+                          builder: (_, available, _) => available
+                              ? Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: FilledButton.icon(
+                                    onPressed: () => _enableAudio(receiver),
+                                    icon: const Icon(Icons.volume_up),
+                                    label: const Text('Enable audio'),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        // Hidden renderer; required for the browser to play remote audio.
+                        SizedBox(
+                          width: 1,
+                          height: 1,
+                          child: RTCVideoView(receiver.renderer),
+                        ),
                       ],
-                    ),
+                    ],
                   ),
-          ),
-          if (_transcriber case final transcriber?)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ValueListenableBuilder(
-                    valueListenable: transcriber.status,
-                    builder: (_, value, _) => Text(
-                      value,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 160,
-                    child: Card(
-                      margin: EdgeInsets.zero,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              'Transcript',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: ValueListenableBuilder(
-                                valueListenable: transcriber.transcript,
-                                builder: (_, text, _) => SingleChildScrollView(
-                                  reverse: true,
-                                  child: SelectableText(
-                                    text.isEmpty
-                                        ? 'Transcript will appear here'
-                                        : text,
+                ),
+              ),
+            if (_transcriber case final transcriber?)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ValueListenableBuilder(
+                        valueListenable: transcriber.status,
+                        builder: (_, value, _) => Text(
+                          value,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: Card(
+                          margin: EdgeInsets.zero,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Transcript',
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                                const SizedBox(height: 8),
+                                Expanded(
+                                  child: ValueListenableBuilder(
+                                    valueListenable: transcriber.transcript,
+                                    builder: (_, text, _) =>
+                                        SingleChildScrollView(
+                                          reverse: true,
+                                          child: SelectableText(
+                                            text.isEmpty
+                                                ? 'Transcript will appear here'
+                                                : text,
+                                          ),
+                                        ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
