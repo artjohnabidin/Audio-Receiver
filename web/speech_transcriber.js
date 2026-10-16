@@ -8,6 +8,8 @@
     ['tokens.txt', 'tokens.txt'],
   ];
   const modelDirectory = '/audio-receiver-asr';
+  const minimumSpeechRmsDbfs = -60;
+  const minimumSpeechRms = 10 ** (minimumSpeechRmsDbfs / 20);
   let activeSession = null;
 
   function notifyStatus(session, message) {
@@ -67,11 +69,32 @@
     return output;
   }
 
+  function measureLevel(samples) {
+    let squaredSum = 0;
+    let peak = 0;
+    for (const sample of samples) {
+      squaredSum += sample * sample;
+      peak = Math.max(peak, Math.abs(sample));
+    }
+    return {
+      rms: Math.sqrt(squaredSum / samples.length),
+      peak,
+    };
+  }
+
+  function toDbfs(amplitude) {
+    return 20 * Math.log10(Math.max(amplitude, 1e-8));
+  }
+
   async function stopSession(session) {
     if (session.stopped) return;
     session.stopped = true;
     session.abortController.abort();
     session.track?.removeEventListener('ended', session.onTrackEnded);
+    session.audioContext.removeEventListener(
+      'statechange',
+      session.onAudioContextStateChange,
+    );
     session.source?.disconnect();
     session.processor?.disconnect();
     session.silentOutput?.disconnect();
@@ -90,6 +113,9 @@
       audioContext,
       onTranscript,
       onStatus,
+      smoothedRms: null,
+      meterPeak: 0,
+      lastMeterUpdate: 0,
       stopped: false,
     };
     activeSession = session;
@@ -138,7 +164,6 @@
       });
       session.recognizerStream = session.recognizer.createStream();
 
-      await session.audioContext.resume();
       session.track = stream.getAudioTracks()[0];
       if (!session.track) throw new Error('The remote audio track is unavailable');
       session.onTrackEnded = () => {
@@ -151,6 +176,20 @@
       session.processor = session.audioContext.createScriptProcessor(4096, 1, 1);
       session.silentOutput = session.audioContext.createGain();
       session.silentOutput.gain.value = 0;
+      session.onAudioContextStateChange = () => {
+        if (session.audioContext.state === 'running') {
+          notifyStatus(session, 'Transcribing locally (English) - measuring input');
+        } else if (session.audioContext.state === 'suspended') {
+          notifyStatus(
+            session,
+            'Transcription ready - click Enable audio to allow browser audio processing',
+          );
+        }
+      };
+      session.audioContext.addEventListener(
+        'statechange',
+        session.onAudioContextStateChange,
+      );
       session.processor.onaudioprocess = (event) => {
         if (session.stopped) return;
         const samples = resample(
@@ -160,7 +199,28 @@
         );
         if (samples.length === 0) return;
 
-        session.recognizerStream.acceptWaveform(16000, samples);
+        const { rms, peak } = measureLevel(samples);
+        session.smoothedRms =
+          session.smoothedRms === null
+            ? rms
+            : session.smoothedRms * 0.8 + rms * 0.2;
+        session.meterPeak = Math.max(session.meterPeak, peak);
+        const now = performance.now();
+        if (now - session.lastMeterUpdate >= 1000) {
+          const rmsDbfs = toDbfs(session.smoothedRms);
+          const peakDbfs = toDbfs(session.meterPeak);
+          notifyStatus(
+            session,
+            `Transcribing locally (English) - input RMS ${rmsDbfs.toFixed(0)} dBFS, peak ${peakDbfs.toFixed(0)} dBFS`,
+          );
+          session.lastMeterUpdate = now;
+          session.meterPeak = 0;
+        }
+
+        const recognitionSamples = rms < minimumSpeechRms
+          ? new Float32Array(samples.length)
+          : samples;
+        session.recognizerStream.acceptWaveform(16000, recognitionSamples);
         while (session.recognizer.isReady(session.recognizerStream)) {
           session.recognizer.decode(session.recognizerStream);
         }
@@ -173,7 +233,7 @@
       session.source.connect(session.processor);
       session.processor.connect(session.silentOutput);
       session.silentOutput.connect(session.audioContext.destination);
-      notifyStatus(session, 'Transcribing locally (English)');
+      session.onAudioContextStateChange();
     } catch (error) {
       if (activeSession === session) {
         activeSession = null;
