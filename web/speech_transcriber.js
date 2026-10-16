@@ -8,8 +8,11 @@
     ['tokens.txt', 'tokens.txt'],
   ];
   const modelDirectory = '/audio-receiver-asr';
+<<<<<<< HEAD
   const minimumSpeechRmsDbfs = -60;
   const minimumSpeechRms = 10 ** (minimumSpeechRmsDbfs / 20);
+=======
+>>>>>>> main
   let activeSession = null;
 
   function notifyStatus(session, message) {
@@ -69,6 +72,7 @@
     return output;
   }
 
+<<<<<<< HEAD
   function measureLevel(samples) {
     let squaredSum = 0;
     let peak = 0;
@@ -86,15 +90,20 @@
     return 20 * Math.log10(Math.max(amplitude, 1e-8));
   }
 
+=======
+>>>>>>> main
   async function stopSession(session) {
     if (session.stopped) return;
     session.stopped = true;
     session.abortController.abort();
     session.track?.removeEventListener('ended', session.onTrackEnded);
+<<<<<<< HEAD
     session.audioContext.removeEventListener(
       'statechange',
       session.onAudioContextStateChange,
     );
+=======
+>>>>>>> main
     session.source?.disconnect();
     session.processor?.disconnect();
     session.silentOutput?.disconnect();
@@ -113,9 +122,12 @@
       audioContext,
       onTranscript,
       onStatus,
+<<<<<<< HEAD
       smoothedRms: null,
       meterPeak: 0,
       lastMeterUpdate: 0,
+=======
+>>>>>>> main
       stopped: false,
     };
     activeSession = session;
@@ -164,6 +176,10 @@
       });
       session.recognizerStream = session.recognizer.createStream();
 
+<<<<<<< HEAD
+=======
+      await session.audioContext.resume();
+>>>>>>> main
       session.track = stream.getAudioTracks()[0];
       if (!session.track) throw new Error('The remote audio track is unavailable');
       session.onTrackEnded = () => {
@@ -176,6 +192,7 @@
       session.processor = session.audioContext.createScriptProcessor(4096, 1, 1);
       session.silentOutput = session.audioContext.createGain();
       session.silentOutput.gain.value = 0;
+<<<<<<< HEAD
       session.onAudioContextStateChange = () => {
         if (session.audioContext.state === 'running') {
           notifyStatus(session, 'Transcribing locally (English) - measuring input');
@@ -190,6 +207,8 @@
         'statechange',
         session.onAudioContextStateChange,
       );
+=======
+>>>>>>> main
       session.processor.onaudioprocess = (event) => {
         if (session.stopped) return;
         const samples = resample(
@@ -199,6 +218,7 @@
         );
         if (samples.length === 0) return;
 
+<<<<<<< HEAD
         const { rms, peak } = measureLevel(samples);
         session.smoothedRms =
           session.smoothedRms === null
@@ -221,6 +241,9 @@
           ? new Float32Array(samples.length)
           : samples;
         session.recognizerStream.acceptWaveform(16000, recognitionSamples);
+=======
+        session.recognizerStream.acceptWaveform(16000, samples);
+>>>>>>> main
         while (session.recognizer.isReady(session.recognizerStream)) {
           session.recognizer.decode(session.recognizerStream);
         }
@@ -233,7 +256,11 @@
       session.source.connect(session.processor);
       session.processor.connect(session.silentOutput);
       session.silentOutput.connect(session.audioContext.destination);
+<<<<<<< HEAD
       session.onAudioContextStateChange();
+=======
+      notifyStatus(session, 'Transcribing locally (English)');
+>>>>>>> main
     } catch (error) {
       if (activeSession === session) {
         activeSession = null;
