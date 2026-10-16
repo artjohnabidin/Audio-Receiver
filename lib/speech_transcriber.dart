@@ -21,6 +21,7 @@ class SpeechTranscriber {
 
   String _finalTranscript = '';
   String _partialTranscript = '';
+  web.AudioContext? _audioContext;
   bool _stopped = false;
   bool _disposed = false;
 
@@ -32,8 +33,8 @@ class SpeechTranscriber {
     final audioContext = web.AudioContext(
       web.AudioContextOptions(sampleRate: 16000),
     );
+    _audioContext = audioContext;
     try {
-      await audioContext.resume().toDart;
       await SherpaOnnxWeb.loadWasm();
       if (_stopped) {
         await audioContext.close().toDart;
@@ -64,8 +65,25 @@ class SpeechTranscriber {
     }
   }
 
+  Future<void> resumeAudioFromUserGesture() async {
+    final audioContext = _audioContext;
+    if (audioContext == null ||
+        audioContext.state == 'closed' ||
+        audioContext.state == 'running') {
+      return;
+    }
+    await audioContext.resume().toDart;
+  }
+
   Future<void> stop() async {
     _stopped = true;
+    if (_partialTranscript.isNotEmpty) {
+      _finalTranscript = _finalTranscript.isEmpty
+          ? _partialTranscript
+          : '$_finalTranscript\n$_partialTranscript';
+      _partialTranscript = '';
+      transcript.value = _finalTranscript;
+    }
     await _stopSpeechTranscription().toDart;
     if (!_disposed) status.value = 'Stopped';
   }
