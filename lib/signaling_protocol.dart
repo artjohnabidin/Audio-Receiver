@@ -3,6 +3,10 @@ import 'dart:convert';
 enum SignalingMessageType {
   join('join'),
   peerReady('peer-ready'),
+  startStreaming('start-streaming'),
+  pauseStreaming('pause-streaming'),
+  resumeStreaming('resume-streaming'),
+  stopStreaming('stop-streaming'),
   offer('offer'),
   answer('answer'),
   candidate('candidate'),
@@ -82,6 +86,7 @@ class SignalingMessage {
       throw const FormatException('recipientID cannot be empty');
     }
     if ((type == SignalingMessageType.peerReady ||
+            type == SignalingMessageType.startStreaming ||
             type == SignalingMessageType.offer ||
             type == SignalingMessageType.answer ||
             type == SignalingMessageType.candidate ||
@@ -207,8 +212,13 @@ class SignalingMessageRouter {
       return null;
     }
 
+    // Control messages repeat identically (pause/resume/pause), so they are not deduplicated.
+    final isControl =
+        message.type == SignalingMessageType.pauseStreaming ||
+        message.type == SignalingMessageType.resumeStreaming ||
+        message.type == SignalingMessageType.stopStreaming;
     final key = jsonEncode(message.toJson());
-    if (!_seen.add(key)) return null;
+    if (!isControl && !_seen.add(key)) return null;
     if (_seen.length > _maxRememberedMessages) _seen.remove(_seen.first);
     return message;
   }

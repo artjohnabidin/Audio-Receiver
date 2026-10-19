@@ -166,7 +166,7 @@ Future<void> waitFor(bool Function() condition) async {
 
 void main() {
   test(
-    'late listener discovers broadcaster and negotiates once with real ICE',
+    'listener negotiates automatically when the broadcaster starts',
     () async {
       final signaling = LocalSignaling();
       final receiver = AudioReceiver(signaling, iceServers: const []);
@@ -178,6 +178,9 @@ void main() {
       expect(signaling.sent.first.sessionId, isNull);
 
       signaling.announce();
+      await waitFor(() => receiver.pendingBroadcaster.value != null);
+      expect(receiver.state.value, ReceiverState.waitingForBroadcaster);
+      signaling.announce(type: SignalingMessageType.startStreaming);
       await waitFor(() => receiver.state.value == ReceiverState.connected);
       final offer = signaling.sent.singleWhere(
         (message) => message.type == SignalingMessageType.offer,
@@ -225,6 +228,7 @@ void main() {
         () => receiver.state.value == ReceiverState.waitingForBroadcaster,
       );
       signaling.announce();
+      signaling.announce(type: SignalingMessageType.startStreaming);
       await waitFor(() => receiver.state.value == ReceiverState.connected);
       signaling.rejectDeparture = true;
       await receiver.stop();
@@ -242,6 +246,7 @@ void main() {
       await signaling.createBroadcasterWithAudio();
       await receiver.start();
       signaling.announce();
+      signaling.announce(type: SignalingMessageType.startStreaming);
 
       await waitFor(() => receiver.audioAvailable.value);
       expect(receiver.remoteWebStream, isNotNull);

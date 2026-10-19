@@ -30,6 +30,10 @@ class AudioReceiver {
   final log = ValueNotifier<List<String>>([]);
   final audioAvailable = ValueNotifier(false);
   final renderer = RTCVideoRenderer();
+  // Set when a broadcaster has joined and is waiting for its start signal.
+  final pendingBroadcaster = ValueNotifier<SignalingMessage?>(null);
+  final paused = ValueNotifier(false);
+  SignalingMessage? _activeBroadcaster;
 
   RTCPeerConnection? _pc;
   web.MediaStream? _remoteWebStream;
@@ -99,7 +103,35 @@ class AudioReceiver {
     try {
       switch (message.type) {
         case SignalingMessageType.peerReady:
-          await _negotiate(message);
+          if (_remoteId == message.senderId) {
+            await _negotiate(message);
+          } else {
+            pendingBroadcaster.value = message;
+            _log('Broadcaster is ready; waiting for start streaming');
+          }
+        case SignalingMessageType.pauseStreaming:
+          if (message.senderId == _remoteId) paused.value = true;
+        case SignalingMessageType.resumeStreaming:
+          if (message.senderId == _remoteId) paused.value = false;
+        case SignalingMessageType.stopStreaming:
+          if (message.senderId == _remoteId) {
+            final broadcaster = _activeBroadcaster;
+            await _closePeer();
+            _setState(ReceiverState.waitingForBroadcaster);
+            pendingBroadcaster.value = broadcaster;
+            _log('Broadcaster stopped streaming');
+          }
+        case SignalingMessageType.startStreaming:
+          if (_isCurrentPeer(message)) return;
+          final broadcaster = pendingBroadcaster.value;
+          if (broadcaster == null ||
+              broadcaster.senderId != message.senderId ||
+              broadcaster.sessionId != message.sessionId) {
+            return;
+          }
+          pendingBroadcaster.value = null;
+          _activeBroadcaster = broadcaster;
+          _enqueueOperation(() => _negotiate(message));
         case SignalingMessageType.answer:
           await _handleAnswer(message);
         case SignalingMessageType.candidate:
@@ -117,13 +149,8 @@ class AudioReceiver {
           _setState(ReceiverState.disconnected);
         case SignalingMessageType.join:
           if (_isCurrentPeer(message)) return;
-          await signaling.send(
-            type: SignalingMessageType.peerReady,
-            sessionId: message.sessionId,
-            recipientId: message.senderId,
-          );
-          await _negotiate(message);
-          break;
+          pendingBroadcaster.value = message;
+          _log('Broadcaster ${message.senderId} joined; ready to start');
         case SignalingMessageType.offer:
           break;
       }
@@ -132,6 +159,57 @@ class AudioReceiver {
       await _closePeer();
       _setState(ReceiverState.disconnected);
     }
+  }
+
+  Future<void> startStreaming() async {
+    final broadcaster = pendingBroadcaster.value;
+    if (broadcaster == null) return;
+    pendingBroadcaster.value = null;
+    _activeBroadcaster = broadcaster;
+    _enqueueOperation(() async {
+      await signaling.send(
+        type: SignalingMessageType.startStreaming,
+        sessionId: broadcaster.sessionId,
+        recipientId: broadcaster.senderId,
+      );
+      if (broadcaster.type == SignalingMessageType.join) {
+        await signaling.send(
+          type: SignalingMessageType.peerReady,
+          sessionId: broadcaster.sessionId,
+          recipientId: broadcaster.senderId,
+        );
+      }
+      await _negotiate(broadcaster);
+    });
+  }
+
+  Future<void> _sendControl(SignalingMessageType type) async {
+    final remoteId = _remoteId;
+    final sessionId = _sessionId;
+    if (remoteId == null || sessionId == null) return;
+    await signaling.send(
+      type: type,
+      sessionId: sessionId,
+      recipientId: remoteId,
+    );
+  }
+
+  Future<void> pauseStreaming() async {
+    await _sendControl(SignalingMessageType.pauseStreaming);
+    paused.value = true;
+  }
+
+  Future<void> resumeStreaming() async {
+    await _sendControl(SignalingMessageType.resumeStreaming);
+    paused.value = false;
+  }
+
+  Future<void> stopStreaming() async {
+    final broadcaster = _activeBroadcaster;
+    await _sendControl(SignalingMessageType.stopStreaming);
+    await _closePeer();
+    _setState(ReceiverState.waitingForBroadcaster);
+    pendingBroadcaster.value = broadcaster;
   }
 
   Future<void> _negotiate(SignalingMessage ready) async {
@@ -310,6 +388,8 @@ class AudioReceiver {
     _pendingCandidates.clear();
     audioAvailable.value = false;
     _remoteWebStream = null;
+    pendingBroadcaster.value = null;
+    paused.value = false;
     renderer.srcObject = null;
     final pc = _pc;
     _pc = null;
