@@ -60,6 +60,32 @@ compile-time defines are visible in the web bundle, not secret storage. For
 production, fetch credentials from your backend when creating the receiver.
 Supabase carries signaling only, not the audio. Use HTTPS outside localhost.
 
+## Production deployment
+
+The GitHub Actions workflow in `.github/workflows/deploy-web.yml` builds a release
+Flutter web bundle and uploads it to an existing Azure Static Web App on pushes
+to `main`. You can also run it manually from the Actions tab.
+
+Create an Azure Static Web App with deployment source **Other** to avoid creating
+a second deployment workflow. In GitHub, open **Settings > Secrets and variables
+> Actions** and configure:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| Secret | `AZURE_STATIC_WEB_APPS_API_TOKEN` | Deployment token from the target Azure Static Web App. |
+| Variable | `SUPABASE_URL` | Your Supabase project URL. |
+| Secret | `SUPABASE_KEY` | Supabase public anon or publishable key, never a service-role or secret key. |
+| Variable (optional) | `WEBRTC_ICE_SERVERS` | JSON array of ICE servers; defaults to Google STUN. |
+
+The workflow does not use your ignored local `env.json`. Compile-time values,
+including the Supabase public key and any TURN credentials, are visible in the
+published JavaScript even when supplied through GitHub secrets. Use the runtime
+TURN credential approach described above for production connectivity.
+
+This workflow publishes static web files only; it does not provision Azure or
+deploy Supabase services. After deployment, open the Azure HTTPS URL and verify
+joining a room, remote audio playback, and transcription with the Swift app.
+
 ## Verification
 
 ```sh
