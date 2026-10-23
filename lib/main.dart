@@ -52,7 +52,7 @@ class ReceiverPage extends StatefulWidget {
 }
 
 class _ReceiverPageState extends State<ReceiverPage> {
-  final _roomController = TextEditingController(text: 'event-4');
+  final _roomController = TextEditingController(text: 'event-1');
   final _speechHttpClient = http.Client();
   AudioReceiver? _receiver;
   SpeechTranscriber? _transcriber;
