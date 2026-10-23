@@ -290,6 +290,57 @@ class _ReceiverPageState extends State<ReceiverPage> {
                       const SizedBox(height: 16),
                       if (receiver != null) ...[
                         ValueListenableBuilder(
+                          valueListenable: receiver.state,
+                          builder: (_, state, _) =>
+                              state == ReceiverState.connected
+                              ? Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: ValueListenableBuilder(
+                                    valueListenable: receiver.paused,
+                                    builder: (_, paused, _) => Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        FilledButton.tonalIcon(
+                                          onPressed: paused
+                                              ? receiver.resumeStreaming
+                                              : receiver.pauseStreaming,
+                                          icon: Icon(
+                                            paused
+                                                ? Icons.play_arrow
+                                                : Icons.pause,
+                                          ),
+                                          label: Text(
+                                            paused ? 'Resume' : 'Pause',
+                                          ),
+                                        ),
+                                        FilledButton.tonalIcon(
+                                          onPressed: receiver.stopStreaming,
+                                          icon: const Icon(Icons.stop),
+                                          label: const Text('Stop'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        ValueListenableBuilder(
+                          valueListenable: receiver.pendingBroadcaster,
+                          builder: (_, pending, _) => pending != null
+                              ? Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: FilledButton.icon(
+                                      onPressed: receiver.startStreaming,
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: const Text('Start streaming'),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        ValueListenableBuilder(
                           valueListenable: receiver.audioAvailable,
                           builder: (_, available, _) => available
                               ? Align(
