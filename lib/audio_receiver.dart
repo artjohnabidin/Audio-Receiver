@@ -95,6 +95,12 @@ class AudioReceiver {
   }
 
   Future<void> _handleSignal(SignalingMessage message) async {
+    _log(
+      'Signal received: type=${message.type.value}, '
+      'role=${message.role}, sender=${message.senderId}, '
+      'recipient=${message.recipientId ?? "broadcast"}, '
+      'session=${message.sessionId ?? "none"}',
+    );
     if (message.role != 'broadcaster') return;
     _log(
       'Received ${message.type.value} from ${message.senderId} '
