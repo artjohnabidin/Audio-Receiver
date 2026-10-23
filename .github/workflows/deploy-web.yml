@@ -20,7 +20,7 @@ jobs:
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       WEBRTC_ICE_SERVERS: ${{ vars.WEBRTC_ICE_SERVERS || '[{"urls":"stun:stun.l.google.com:19302"}]' }}
-      SPEECH_TOKEN_URL: ${{ secrets.SPEECH_TOKEN_URL }}
+      SPEECH_TOKEN_URL: ${{ vars.SPEECH_TOKEN_URL }}
 
     steps:
       - uses: actions/checkout@v4
