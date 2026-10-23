@@ -58,7 +58,6 @@
     if (!token || !region) {
       throw new Error('Missing Azure Speech authorization');
     }
-
     const session = {
       onTranscript,
       onStatus,
@@ -67,6 +66,18 @@
     };
 
     activeSession = session;
+
+    function getDetectedLanguage(result) {
+      try {
+        const detected =
+          sdk.AutoDetectSourceLanguageResult.fromResult(result);
+
+        return detected.language || 'unknown';
+      } catch (error) {
+        console.warn('Could not determine detected language:', error);
+        return 'unknown';
+      }
+    }
 
     try {
       const speechConfig =
@@ -102,26 +113,45 @@
       };
 
       session.recognizer.recognized = (_sender, event) => {
-        if (session.stopped) return;
+        if (session.stopped) {
+          console.warn('[Azure] Callback ignored because session is stopped');
+          return;
+        }
 
-        if (
-          event.result?.reason === sdk.ResultReason.RecognizedSpeech
-        ) {
+        if (event.result?.reason === sdk.ResultReason.RecognizedSpeech) {
           const text = event.result.text?.trim();
 
           if (text) {
+            const language = getDetectedLanguage(event.result);
+
+            console.info('[Azure Speech] Language:', language);
+            console.info('[Azure Speech] Final transcript:', text);
+
+            setStatus(session, `Detected ${language}: ${text}`);
             onTranscript(text, true);
           }
+        } else {
+          console.info(
+            '[Azure Speech] Recognition result:',
+            event.result?.reason
+          );
         }
       };
 
       session.recognizer.canceled = (_sender, event) => {
         if (session.stopped) return;
 
-        const details =
-          event.errorDetails ||
-          event.reason ||
-          'Recognition canceled';
+        console.error('[Azure Speech] Recognition canceled', {
+          reason: event.reason,
+          errorCode: event.errorCode,
+          errorDetails: event.errorDetails,
+        });
+
+        const details = [
+          `Reason: ${event.reason}`,
+          `Code: ${event.errorCode ?? 'unknown'}`,
+          `Details: ${event.errorDetails ?? 'none'}`,
+        ].join(' | ');
 
         setStatus(session, `Azure Speech canceled: ${details}`);
 
