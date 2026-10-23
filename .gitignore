@@ -12,8 +12,16 @@
 
 # Local configuration
 /env.json
+/azure-functions/local.settings.json
+/azure-functions/node_modules/
 
 # IDE and operating system files
 .idea/
 *.iml
 .DS_Store
+
+# MCP
+.vscode
+
+# Testing
+/test

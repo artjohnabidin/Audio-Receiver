@@ -64,7 +64,7 @@ void main() {
         'http://127.0.0.1:${server.port}',
         'test-key',
       );
-      final signaling = SupabaseSignaling(client: client, roomId: 'event-1');
+      final signaling = SupabaseSignaling(client: client, roomId: 'event-4');
       addTearDown(() async {
         shuttingDown = true;
         await signaling.dispose();
@@ -96,7 +96,7 @@ void main() {
       expect(envelope.containsKey('roomID'), isFalse);
       final payload = Map<String, dynamic>.from(envelope['payload'] as Map);
       expect(payload['type'], 'candidate');
-      expect(payload['roomID'], 'event-1');
+      expect(payload['roomID'], 'event-4');
       expect(payload['senderID'], signaling.peerId);
       expect(payload['recipientID'], 'broadcaster-1');
       expect(payload['sdpMLineIndex'], 0);

@@ -7,7 +7,7 @@ void main() {
   test('listener discovery omits the unknown broadcaster session ID', () {
     const discovery = SignalingMessage(
       type: SignalingMessageType.join,
-      roomId: 'event-1',
+      roomId: 'event-4',
       senderId: 'listener-1',
       role: 'listener',
     );
@@ -24,7 +24,7 @@ void main() {
 
   const message = SignalingMessage(
     type: SignalingMessageType.candidate,
-    roomId: 'event-1',
+    roomId: 'event-4',
     sessionId: 'session-1',
     senderId: 'sender-1',
     role: 'broadcaster',
@@ -38,7 +38,7 @@ void main() {
     final json = message.toJson();
 
     expect(json['type'], 'candidate');
-    expect(json['roomID'], 'event-1');
+    expect(json['roomID'], 'event-4');
     expect(json['sessionID'], 'session-1');
     expect(json['senderID'], 'sender-1');
     expect(json['recipientID'], 'listener-1');
@@ -66,7 +66,7 @@ void main() {
   test('decodes Swift signaling errors from the message field', () {
     final decoded = SignalingMessage.fromJson({
       'type': 'error',
-      'roomID': 'event-1',
+      'roomID': 'event-4',
       'sessionID': 'session-1',
       'senderID': 'broadcaster-1',
       'role': 'broadcaster',
@@ -131,7 +131,7 @@ void main() {
     expect(
       () => SignalingMessage.fromJson({
         'type': 'answer',
-        'roomID': 'event-1',
+        'roomID': 'event-4',
         'sessionID': 'session-1',
         'senderID': 'sender-1',
         'role': 'broadcaster',
@@ -142,7 +142,7 @@ void main() {
     expect(
       () => SignalingMessage.fromJson({
         'type': 'candidate',
-        'roomID': 'event-1',
+        'roomID': 'event-4',
         'sessionID': 'session-1',
         'senderID': 'sender-1',
         'role': 'broadcaster',
@@ -154,7 +154,7 @@ void main() {
 
   test('routes only eligible recipient messages and suppresses duplicates', () {
     final router = SignalingMessageRouter(
-      roomId: 'event-1',
+      roomId: 'event-4',
       recipientId: 'listener-1',
     );
 
