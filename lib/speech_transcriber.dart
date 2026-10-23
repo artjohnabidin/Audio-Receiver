@@ -1,18 +1,24 @@
+import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:flutter/foundation.dart';
-import 'package:sherpa_onnx_web/sherpa_onnx_web.dart';
 import 'package:web/web.dart' as web;
 
-@JS('speechTranscriber.start')
+import 'speech_token.dart';
+
+@JS('azureSpeechTranscriber.start')
 external JSPromise<JSAny?> _startSpeechTranscription(
   web.MediaStream stream,
-  web.AudioContext audioContext,
+  JSString token,
+  JSString region,
   JSFunction onTranscript,
   JSFunction onStatus,
 );
 
-@JS('speechTranscriber.stop')
+@JS('azureSpeechTranscriber.updateToken')
+external JSBoolean _updateSpeechToken(JSString token);
+
+@JS('azureSpeechTranscriber.stop')
 external JSPromise<JSAny?> _stopSpeechTranscription();
 
 class SpeechTranscriber {
@@ -21,25 +27,22 @@ class SpeechTranscriber {
 
   String _finalTranscript = '';
   String _partialTranscript = '';
-  web.AudioContext? _audioContext;
-  bool _stopped = false;
+  Timer? _tokenRefreshTimer;
+  bool _stopped = true;
   bool _disposed = false;
 
   bool get isStopped => _stopped;
 
-  Future<void> start(web.MediaStream stream) async {
+  Future<void> start(
+    web.MediaStream stream, {
+    required SpeechToken token,
+    required Future<SpeechToken> Function() refreshToken,
+  }) async {
+    debugPrint('SpeechTranscriber.start() called');
+    
     _stopped = false;
-    status.value = 'Loading local speech recognition';
-    final audioContext = web.AudioContext(
-      web.AudioContextOptions(sampleRate: 16000),
-    );
-    _audioContext = audioContext;
+    status.value = 'Connecting to Azure Speech';
     try {
-      await SherpaOnnxWeb.loadWasm();
-      if (_stopped) {
-        await audioContext.close().toDart;
-        return;
-      }
       final onTranscript = (JSString text, JSBoolean isFinal) {
         _handleTranscript(text.toDart, isFinal.toDart);
       }.toJS;
@@ -50,14 +53,13 @@ class SpeechTranscriber {
       // its JavaScript wrapper provides the streaming API.
       await _startSpeechTranscription(
         stream,
-        audioContext,
+        token.token.toJS,
+        token.region.toJS,
         onTranscript,
         onStatus,
       ).toDart;
+      _scheduleTokenRefresh(token, refreshToken);
     } catch (error) {
-      if (audioContext.state != 'closed') {
-        await audioContext.close().toDart;
-      }
       if (!_stopped && !_disposed) {
         status.value = 'Transcription failed: $error';
       }
@@ -65,18 +67,10 @@ class SpeechTranscriber {
     }
   }
 
-  Future<void> resumeAudioFromUserGesture() async {
-    final audioContext = _audioContext;
-    if (audioContext == null ||
-        audioContext.state == 'closed' ||
-        audioContext.state == 'running') {
-      return;
-    }
-    await audioContext.resume().toDart;
-  }
-
   Future<void> stop() async {
     _stopped = true;
+    _tokenRefreshTimer?.cancel();
+    _tokenRefreshTimer = null;
     if (_partialTranscript.isNotEmpty) {
       _finalTranscript = _finalTranscript.isEmpty
           ? _partialTranscript
@@ -112,5 +106,30 @@ class SpeechTranscriber {
       _finalTranscript,
       _partialTranscript,
     ].where((part) => part.isNotEmpty).join('\n');
+  }
+
+  void _scheduleTokenRefresh(
+    SpeechToken token,
+    Future<SpeechToken> Function() refreshToken,
+  ) {
+    if (_stopped || _disposed) return;
+    final refreshInSeconds = token.expiresIn > 60
+        ? token.expiresIn - 60
+        : (token.expiresIn ~/ 2).clamp(1, token.expiresIn);
+    _tokenRefreshTimer = Timer(Duration(seconds: refreshInSeconds), () async {
+      if (_stopped || _disposed) return;
+      try {
+        final refreshedToken = await refreshToken();
+        if (_stopped || _disposed) return;
+        if (!_updateSpeechToken(refreshedToken.token.toJS).toDart) {
+          throw StateError('Azure Speech recognizer is not active');
+        }
+        _scheduleTokenRefresh(refreshedToken, refreshToken);
+      } catch (error) {
+        if (!_stopped && !_disposed) {
+          status.value = 'Speech authorization refresh failed: $error';
+        }
+      }
+    });
   }
 }

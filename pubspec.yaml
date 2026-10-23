@@ -38,7 +38,7 @@ dependencies:
   supabase_flutter: ^2.18.2
   web: ^1.1.1
   dart_webrtc: ^1.8.2
-  sherpa_onnx_web: ^1.13.8
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

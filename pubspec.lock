@@ -217,7 +217,7 @@ packages:
     source: hosted
     version: "2.0.2"
   http:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: http
       sha256: "87721a4a50b19c7f1d49001e51409bddc46303966ce89a65af4f4e6004896412"
@@ -536,14 +536,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.4.1"
-  sherpa_onnx_web:
-    dependency: "direct main"
-    description:
-      name: sherpa_onnx_web
-      sha256: e25a3813eb080636280b23dd4b0098252902675158b66dceda1efba061adf5d7
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.13.8"
   sky_engine:
     dependency: transitive
     description: flutter

@@ -3,15 +3,18 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'audio_receiver.dart';
 import 'signaling.dart';
+import 'speech_token.dart';
 import 'speech_transcriber.dart';
 
 // Provide via: flutter run -d chrome --dart-define-from-file=env.json
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_KEY');
+const speechTokenUrl = String.fromEnvironment('SPEECH_TOKEN_URL');
 const iceServersJson = String.fromEnvironment(
   'WEBRTC_ICE_SERVERS',
   defaultValue: '[{"urls":"stun:stun.l.google.com:19302"}]',
@@ -49,16 +52,24 @@ class ReceiverPage extends StatefulWidget {
 }
 
 class _ReceiverPageState extends State<ReceiverPage> {
-  final _roomController = TextEditingController(text: 'event-1');
+  final _roomController = TextEditingController(text: 'event-4');
+  final _speechHttpClient = http.Client();
   AudioReceiver? _receiver;
   SpeechTranscriber? _transcriber;
   VoidCallback? _audioAvailabilityListener;
+  bool _showTranscript = false;
 
-  bool get _configured => supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+  bool get _configured =>
+      supabaseUrl.isNotEmpty &&
+      supabaseAnonKey.isNotEmpty &&
+      speechTokenUrl.isNotEmpty;
 
   Future<void> _start() async {
+    debugPrint('[1] Connect button handler called');
+
     final room = _roomController.text.trim();
     if (room.isEmpty) return;
+    setState(() => _showTranscript = true);
     try {
       final iceServers = (jsonDecode(iceServersJson) as List)
           .map((server) => Map<String, dynamic>.from(server as Map))
@@ -69,7 +80,13 @@ class _ReceiverPageState extends State<ReceiverPage> {
       );
       setState(() => _receiver = receiver);
       void onAudioAvailabilityChanged() {
+        debugPrint(
+          '[2] Audio availability changed: '
+          '${receiver.audioAvailable.value}',
+        );
+
         if (receiver.audioAvailable.value) {
+          debugPrint('[3] Calling _startTranscription');
           unawaited(_startTranscription(receiver));
         } else {
           unawaited(_stopTranscription());
@@ -78,7 +95,10 @@ class _ReceiverPageState extends State<ReceiverPage> {
 
       _audioAvailabilityListener = onAudioAvailabilityChanged;
       receiver.audioAvailable.addListener(onAudioAvailabilityChanged);
+
+      debugPrint('[4] Calling receiver.start()');
       await receiver.start();
+      debugPrint('[5] receiver.start() completed');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -101,13 +121,57 @@ class _ReceiverPageState extends State<ReceiverPage> {
   }
 
   Future<void> _startTranscription(AudioReceiver receiver) async {
-    if (_transcriber case final current? when !current.isStopped) return;
+    debugPrint('[6] _startTranscription entered');
+
+    if (_transcriber case final current? when !current.isStopped)
+    {
+      debugPrint('[6a] Transcriber already running');
+      return;
+    }
     final stream = receiver.remoteWebStream;
+
+    debugPrint('[7] Remote stream is null: ${stream == null}');
+    debugPrint('[8] Widget mounted: $mounted');
+
     if (stream == null || !mounted) return;
     final transcriber = _transcriber ?? SpeechTranscriber();
     setState(() => _transcriber = transcriber);
     try {
-      await transcriber.start(stream);
+      debugPrint('[9] Checking Supabase session');
+
+      final auth = Supabase.instance.client.auth;
+      if (auth.currentSession == null) 
+      {
+        debugPrint('[10] Signing in anonymously');
+        await auth.signInAnonymously();
+      }
+
+      debugPrint('[11] Fetching speech token');
+
+      Future<SpeechToken> fetchSpeechToken() {
+        final accessToken = auth.currentSession?.accessToken;
+        debugPrint('accessToken: $accessToken');
+        if (accessToken == null) {
+          throw StateError('A Supabase session is required for speech access');
+        }
+        return SpeechTranscriberAuthService(
+          backendBaseUrl: speechTokenUrl,
+          httpClient: _speechHttpClient,
+        ).fetchToken(accessToken);
+      }
+
+      final token = await fetchSpeechToken();
+      debugPrint('[12] Speech token fetched successfully');
+
+      debugPrint('[13] About to call transcriber.start');
+
+      await transcriber.start(
+        stream,
+        token: token,
+        refreshToken: fetchSpeechToken,
+      );
+
+      debugPrint('[14] transcriber.start completed');
     } catch (error) {
       if (transcriber.isStopped || !mounted) return;
       debugPrint('Transcription failed: $error');
@@ -131,7 +195,6 @@ class _ReceiverPageState extends State<ReceiverPage> {
   }
 
   Future<void> _enableAudio(AudioReceiver receiver) async {
-    final resumeTranscription = _transcriber?.resumeAudioFromUserGesture();
     try {
       await receiver.enableAudioPlayback();
     } catch (error) {
@@ -139,14 +202,6 @@ class _ReceiverPageState extends State<ReceiverPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not enable audio: $error')));
-    }
-    try {
-      await resumeTranscription;
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not resume transcription: $error')),
-      );
     }
   }
 
@@ -167,6 +222,7 @@ class _ReceiverPageState extends State<ReceiverPage> {
       transcriber.dispose();
     }
     _receiver?.stop();
+    _speechHttpClient.close();
     _roomController.dispose();
     super.dispose();
   }
@@ -174,6 +230,7 @@ class _ReceiverPageState extends State<ReceiverPage> {
   @override
   Widget build(BuildContext context) {
     final receiver = _receiver;
+    final transcriber = _transcriber;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -188,7 +245,7 @@ class _ReceiverPageState extends State<ReceiverPage> {
                   child: Padding(
                     padding: EdgeInsets.all(24),
                     child: Text(
-                      'Missing Supabase config.\nRun with --dart-define-from-file=env.json',
+                      'Missing Supabase or speech token service config.\nRun with --dart-define-from-file=env.json',
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -307,20 +364,26 @@ class _ReceiverPageState extends State<ReceiverPage> {
                   ),
                 ),
               ),
-            if (_transcriber case final transcriber?)
+            if (_showTranscript)
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      ValueListenableBuilder(
-                        valueListenable: transcriber.status,
-                        builder: (_, value, _) => Text(
-                          value,
+                      if (transcriber case final current?)
+                        ValueListenableBuilder(
+                          valueListenable: current.status,
+                          builder: (_, value, _) => Text(
+                            value,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        )
+                      else
+                        Text(
+                          'Waiting for broadcaster audio',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
-                      ),
                       const SizedBox(height: 8),
                       Expanded(
                         child: Card(
@@ -336,18 +399,25 @@ class _ReceiverPageState extends State<ReceiverPage> {
                                 ),
                                 const SizedBox(height: 8),
                                 Expanded(
-                                  child: ValueListenableBuilder(
-                                    valueListenable: transcriber.transcript,
-                                    builder: (_, text, _) =>
-                                        SingleChildScrollView(
-                                          reverse: true,
+                                  child: transcriber != null
+                                      ? ValueListenableBuilder(
+                                          valueListenable:
+                                              transcriber.transcript,
+                                          builder: (_, text, _) =>
+                                              SingleChildScrollView(
+                                                reverse: true,
+                                                child: SelectableText(
+                                                  text.isEmpty
+                                                      ? 'Transcript will appear here'
+                                                      : text,
+                                                ),
+                                              ),
+                                        )
+                                      : const SingleChildScrollView(
                                           child: SelectableText(
-                                            text.isEmpty
-                                                ? 'Transcript will appear here'
-                                                : text,
+                                            'Transcript will appear here',
                                           ),
                                         ),
-                                  ),
                                 ),
                               ],
                             ),

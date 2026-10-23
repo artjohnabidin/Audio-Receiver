@@ -16,7 +16,7 @@ class LocalSignaling extends SupabaseSignaling {
   LocalSignaling()
     : super(
         client: SupabaseClient('https://example.supabase.co', 'test-key'),
-        roomId: 'event-1',
+        roomId: 'event-4',
       );
 
   final incoming = StreamController<SignalingMessage>.broadcast();
@@ -256,4 +256,20 @@ void main() {
       expect(receiver.remoteWebStream, isNull);
     },
   );
+
+  group('audio_receiver.dart', () {
+    // UC-02.1: Forward chunks in order
+    test('UC-02.1 emits audio chunks in order to consumer', () async {
+      // TODO: Arrange fake audio source and subscriber
+      // TODO: Assert ordered chunk delivery
+      expect(true, isTrue);
+    });
+
+    // UC-02.3: Handle empty/silent chunks
+    test('UC-02.3 handles empty/silent audio chunk without crash', () async {
+      // TODO: Push empty frame
+      // TODO: Assert no exception + expected no-op behavior
+      expect(true, isTrue);
+    });
+  });
 }
