@@ -24,6 +24,9 @@ export function createReceiver({ CallClient, AzureCommunicationTokenCredential, 
   const report = error => {
     if (!closed) callbacks.onError(String(error?.message || error));
   };
+  const applyPlaybackMute = () => playbackMuted
+    ? call.muteIncomingAudio()
+    : call.unmuteIncomingAudio();
   const stateChanged = () => {
     if (closed) return;
     if (call.state === 'Disconnected') {
@@ -34,6 +37,7 @@ export function createReceiver({ CallClient, AzureCommunicationTokenCredential, 
       if (reason?.code) report(new Error(`ACS call ended (${reason.code}/${reason.subCode || 0})`));
     } else if (call.state === 'Connected') {
       clearTimeout(timer);
+      void applyPlaybackMute().catch(report);
       const present = call.remoteParticipants.some(participant => participant.state === 'Connected');
       callbacks.onState(present ? 'connected' : 'waitingForBroadcaster');
     } else {
@@ -46,8 +50,8 @@ export function createReceiver({ CallClient, AzureCommunicationTokenCredential, 
       const remote = call.state === 'Connected' ? call.remoteAudioStreams[0] : null;
       const stream = remote ? await remote.getMediaStream() : null;
       if (!closed && version === streamVersion) {
+        if (stream) await applyPlaybackMute();
         callbacks.onStream(stream);
-        if (stream && !playbackMuted) await call.unmuteIncomingAudio();
       }
     } catch (error) { report(error); }
   };

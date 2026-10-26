@@ -375,28 +375,6 @@ class _EventDetailPageState extends State<EventDetailPage> {
                     ? const SizedBox.shrink()
                     : Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
-              ValueListenableBuilder(
-                valueListenable: receiver.audioAvailable,
-                builder: (context, available, _) {
-                  if (!available) return const SizedBox.shrink();
-
-                  return Align(
-                    alignment: Alignment.centerLeft,
-                    child: FilledButton.tonalIcon(
-                      onPressed: () async {
-                        try {
-                          await receiver.enableAudioPlayback();
-                        } catch (error) {
-                          debugPrint('Audio playback failed: $error');
-                          if (mounted) setState(() => _error = 'Playback failed: $error');
-                        }
-                      },
-                      icon: const Icon(Icons.volume_up),
-                      label: const Text('Enable audio'),
-                    ),
-                  );
-                },
-              ),
             ],
             const SizedBox(height: 16),
             Text(
