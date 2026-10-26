@@ -4,19 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'audio_receiver.dart';
+import 'acs_audio_receiver.dart';
 import 'event_detail_page.dart';
 import 'event_dto.dart';
+import 'login_page.dart';
+import 'services/microsoft_auth_service.dart';
 import 'speech_transcriber.dart';
 
 // Provide via: flutter run -d chrome --dart-define-from-file=env.json
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_KEY');
 const speechTokenUrl = String.fromEnvironment('SPEECH_TOKEN_URL');
-const iceServersJson = String.fromEnvironment(
-  'WEBRTC_ICE_SERVERS',
-  defaultValue: '[{"urls":"stun:stun.l.google.com:19302"}]',
-);
+const acsTokenUrl = String.fromEnvironment('ACS_TOKEN_URL');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,18 +25,36 @@ Future<void> main() async {
       publishableKey: supabaseAnonKey,
     );
   }
-  runApp(const MyApp());
+  var initiallySignedIn = false;
+  try {
+    initiallySignedIn = await MicrosoftAuthService.handleRedirect();
+  } catch (error) {
+    debugPrint('Microsoft redirect sign-in failed: $error');
+  }
+  runApp(MyApp(initiallySignedIn: initiallySignedIn));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({
+    super.key,
+    this.signIn = MicrosoftAuthService.signIn,
+    this.initiallySignedIn = false,
+  });
+
+  final Future<void> Function() signIn;
+  final bool initiallySignedIn;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Audio Receiver',
       theme: ThemeData(colorScheme: .fromSeed(seedColor: Colors.deepPurple)),
-      home: const ReceiverPage(),
+      home: initiallySignedIn
+          ? const ReceiverPage()
+          : LoginPage(
+              onSignIn: signIn,
+              destinationBuilder: (_) => const ReceiverPage(),
+            ),
     );
   }
 }
@@ -53,20 +70,16 @@ class _ReceiverPageState extends State<ReceiverPage> {
   // final _roomController = TextEditingController(text: 'event-1');
   EventDTO? _selectedEvent;
   final _speechHttpClient = http.Client();
-  AudioReceiver? _receiver;
+  ACSAudioReceiver? _receiver;
   SpeechTranscriber? _transcriber;
   VoidCallback? _audioAvailabilityListener;
 
   bool get _configured =>
-      supabaseUrl.isNotEmpty &&
-      supabaseAnonKey.isNotEmpty &&
-      speechTokenUrl.isNotEmpty;
-
+      acsTokenUrl.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-
   }
 
   @override
@@ -107,7 +120,7 @@ class _ReceiverPageState extends State<ReceiverPage> {
                   child: Padding(
                     padding: EdgeInsets.all(24),
                     child: Text(
-                      'Missing Supabase or speech token service config.\nRun with --dart-define-from-file=env.json',
+                      'Missing ACS token service config.',
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -137,7 +150,9 @@ class _ReceiverPageState extends State<ReceiverPage> {
 
                             return Card(
                               color: selected
-                                  ? Theme.of(context).colorScheme.primaryContainer
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer
                                   : null,
                               child: ListTile(
                                 leading: Icon(
@@ -148,7 +163,9 @@ class _ReceiverPageState extends State<ReceiverPage> {
                                     children: [
                                       TextSpan(
                                         text: '${event.id.toUpperCase()} - ',
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                       TextSpan(text: event.title),
                                     ],
@@ -188,11 +205,10 @@ class _ReceiverPageState extends State<ReceiverPage> {
                                   setState(() {
                                     _selectedEvent = null;
                                   });
-                                }
+                                },
                               ),
                             );
                           }),
-                          
                         ],
                       ),
                     ],

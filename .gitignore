@@ -9,6 +9,7 @@
 /coverage/
 /doc/api/
 /lib/generated_plugin_registrant.dart
+/node_modules/
 
 # Local configuration
 /env.json
@@ -24,4 +25,3 @@
 .vscode
 
 # Testing
-/test

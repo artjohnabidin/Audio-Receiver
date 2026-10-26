@@ -1,14 +1,13 @@
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'audio_receiver.dart';
-import 'signaling.dart';
+import 'acs_audio_receiver.dart';
+import 'acs_token.dart';
+import 'services/microsoft_auth_service.dart';
 import 'speech_token.dart';
 import 'speech_transcriber.dart';
 import 'event_dto.dart';
@@ -17,20 +16,20 @@ import 'event_dto.dart';
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_KEY');
 const speechTokenUrl = String.fromEnvironment('SPEECH_TOKEN_URL');
-
-const iceServersJson = String.fromEnvironment(
-  'WEBRTC_ICE_SERVERS',
-  defaultValue: '[{"urls":"stun:stun.l.google.com:19302"}]',
-);
+const acsTokenUrl = String.fromEnvironment('ACS_TOKEN_URL');
 
 class EventDetailPage extends StatefulWidget {
   final EventDTO event;
   final VoidCallback? onDisconnected;
+  final ACSAudioReceiver Function()? createReceiver;
+  final Future<SpeechToken> Function()? fetchSpeechToken;
 
   const EventDetailPage({
     super.key,
     required this.event,
     this.onDisconnected,
+    this.createReceiver,
+    this.fetchSpeechToken,
   });
 
   @override
@@ -40,9 +39,11 @@ class EventDetailPage extends StatefulWidget {
 class _EventDetailPageState extends State<EventDetailPage> {
   final http.Client _httpClient = http.Client();
 
-  AudioReceiver? _receiver;
+  ACSAudioReceiver? _receiver;
   SpeechTranscriber? _transcriber;
   VoidCallback? _audioListener;
+  Future<void> _audioQueue = Future<void>.value();
+  int _audioRevision = 0;
 
   bool _connecting = true;
   bool _startingTranscription = false;
@@ -50,9 +51,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
   String? _error;
 
   bool get _configured =>
-      supabaseUrl.isNotEmpty &&
-      supabaseAnonKey.isNotEmpty &&
-      speechTokenUrl.isNotEmpty;
+      widget.createReceiver != null || acsTokenUrl.isNotEmpty;
 
   @override
   void initState() {
@@ -69,43 +68,38 @@ class _EventDetailPageState extends State<EventDetailPage> {
     if (!_configured) {
       setState(() {
         _connecting = false;
-        _error = 'Missing Supabase or Speech Token configuration.';
+        _error = 'Missing ACS token service configuration.';
       });
       return;
     }
 
     try {
-      // Reuse the Supabase client initialized by main.dart.
-      final supabase = Supabase.instance.client;
-
-      if (supabase.auth.currentSession == null) {
-        await supabase.auth.signInAnonymously();
-      }
-
-      if (!mounted || _disposed) return;
-
-      final iceServers = (jsonDecode(iceServersJson) as List)
-          .map((server) => Map<String, dynamic>.from(server as Map))
-          .toList();
-
-      final receiver = AudioReceiver(
-        SupabaseSignaling(
-          client: supabase,
-          roomId: widget.event.id,
+      final tokenService = ACSTokenService(
+        endpoint: acsTokenUrl,
+        httpClient: _httpClient,
+      );
+      final receiver = widget.createReceiver?.call() ?? ACSAudioReceiver(
+        eventId: widget.event.id,
+        fetchToken: () async => tokenService.fetchToken(
+          await MicrosoftAuthService.acquireIdToken(),
         ),
-        iceServers: iceServers,
       );
 
       _receiver = receiver;
 
       void onAudioChanged() {
         if (_disposed) return;
-
-        if (receiver.audioAvailable.value) {
-          unawaited(_startTranscription(receiver));
-        } else {
-          unawaited(_stopTranscription());
-        }
+        final revision = ++_audioRevision;
+        final stream = receiver.remoteWebStream;
+        _audioQueue = _audioQueue.then((_) async {
+          if (_disposed || _receiver != receiver || revision != _audioRevision) return;
+          await _stopTranscription();
+          if (stream != null) await _startTranscription(receiver);
+        }).catchError((Object error) {
+          if (mounted && !_disposed) {
+            setState(() => _error = 'Transcription failed: $error');
+          }
+        });
       }
 
       _audioListener = onAudioChanged;
@@ -118,11 +112,6 @@ class _EventDetailPageState extends State<EventDetailPage> {
       if (!mounted || _disposed) return;
 
       setState(() => _connecting = false);
-
-      // Handle audio that became available before start() completed.
-      if (receiver.audioAvailable.value) {
-        await _startTranscription(receiver);
-      }
     } catch (error) {
       debugPrint('Event connection failed: $error');
 
@@ -137,8 +126,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
     }
   }
 
-  Future<void> _startTranscription(AudioReceiver receiver) async {
+  Future<void> _startTranscription(ACSAudioReceiver receiver) async {
     if (_disposed ||
+      (widget.fetchSpeechToken == null &&
+        (speechTokenUrl.isEmpty || supabaseUrl.isEmpty || supabaseAnonKey.isEmpty)) ||
         _startingTranscription ||
         (_transcriber != null && !_transcriber!.isStopped)) {
       return;
@@ -156,13 +147,13 @@ class _EventDetailPageState extends State<EventDetailPage> {
     setState(() {});
 
     try {
-      final auth = Supabase.instance.client.auth;
-
-      if (auth.currentSession == null) {
-        await auth.signInAnonymously();
-      }
-
       Future<SpeechToken> fetchToken() async {
+        final provider = widget.fetchSpeechToken;
+        if (provider != null) return provider();
+        final auth = Supabase.instance.client.auth;
+        if (auth.currentSession == null) {
+          await auth.signInAnonymously();
+        }
         final accessToken = auth.currentSession?.accessToken;
 
         if (accessToken == null) {
@@ -177,7 +168,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
 
       final token = await fetchToken();
 
-      if (_disposed || !mounted) return;
+        if (_disposed || !mounted || _receiver != receiver ||
+            !identical(stream, receiver.remoteWebStream)) {
+          return;
+        }
 
       await transcriber.start(
         stream,
@@ -187,7 +181,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
     } catch (error) {
       debugPrint('Speech transcription failed: $error');
 
-      if (mounted && !_disposed && !transcriber.isStopped) {
+      if (mounted && !_disposed) {
         setState(() {
           _error = 'Transcription failed: $error';
         });
@@ -275,7 +269,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
             onPressed: () async {
               await _disconnect();
 
-              if (mounted) {
+              if (context.mounted) {
                 Navigator.of(context).pop();
               }
             },
@@ -341,22 +335,33 @@ class _EventDetailPageState extends State<EventDetailPage> {
                             spacing: 8,
                             children: [
                               FilledButton.tonalIcon(
-                                onPressed: paused
-                                    ? receiver.resumeStreaming
-                                    : receiver.pauseStreaming,
+                                onPressed: () async {
+                                  try {
+                                    if (paused) {
+                                      await receiver.resumeStreaming();
+                                    } else {
+                                      await receiver.pauseStreaming();
+                                    }
+                                  } catch (error) {
+                                    if (mounted) setState(() => _error = 'Playback failed: $error');
+                                  }
+                                },
                                 icon: Icon(
                                   paused
-                                      ? Icons.play_arrow
-                                      : Icons.pause,
+                                      ? Icons.volume_up
+                                      : Icons.volume_off,
                                 ),
                                 label: Text(
-                                  paused ? 'Resume' : 'Pause',
+                                  paused ? 'Unmute' : 'Mute',
                                 ),
                               ),
                               FilledButton.tonalIcon(
-                                onPressed: receiver.stopStreaming,
-                                icon: const Icon(Icons.stop),
-                                label: const Text('Stop'),
+                                onPressed: () async {
+                                  await _disconnect();
+                                  if (context.mounted) Navigator.of(context).pop();
+                                },
+                                icon: const Icon(Icons.call_end),
+                                label: const Text('Leave call'),
                               ),
                             ],
                           ),
@@ -365,20 +370,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
                     : const SizedBox.shrink(),
               ),
               ValueListenableBuilder(
-                valueListenable: receiver.pendingBroadcaster,
-                builder: (_, pending, _) => pending != null
-                    ? Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: FilledButton.icon(
-                            onPressed: receiver.startStreaming,
-                            icon: const Icon(Icons.play_arrow),
-                            label: const Text('Start streaming'),
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
+                valueListenable: receiver.error,
+                builder: (context, error, _) => error == null
+                    ? const SizedBox.shrink()
+                    : Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
               ValueListenableBuilder(
                 valueListenable: receiver.audioAvailable,
@@ -393,6 +388,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                           await receiver.enableAudioPlayback();
                         } catch (error) {
                           debugPrint('Audio playback failed: $error');
+                          if (mounted) setState(() => _error = 'Playback failed: $error');
                         }
                       },
                       icon: const Icon(Icons.volume_up),

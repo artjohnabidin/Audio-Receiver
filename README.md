@@ -1,64 +1,102 @@
-# audio_receiver
+# Audio Receiver
 
-Flutter web listener for the Swift broadcaster in `../Audio-Streaming`.
+Flutter web ACS audio listener for the Swift broadcaster in `../Audio-Streaming`.
+The event page uses the official Azure Communication Services Calling SDK,
+not the legacy WebRTC/Supabase signaling transport.
 
 ## Run
 
-Set `SUPABASE_URL` and `SUPABASE_KEY` in your local `env.json`, then run:
+Install Node.js 22+ and Flutter, then:
 
 ```sh
+npm ci
+npm run build
 flutter run -d chrome --dart-define-from-file=env.json
 ```
 
-Use the exact event ID selected in the Swift app as the Room ID. Either peer
-may join first. Both apps must use the same Supabase project and the public
-`webrtc:<eventID>` channel with Broadcast event `webrtc-signal`.
-
-The listener discovers the broadcaster with a sessionless `join`, adopts its
-session ID, sends `peer-ready`, and creates one receive-only audio offer. The
-broadcaster answers with a send-only microphone track. Local ICE follows the
-offer; remote ICE waits for the answer. Click **Enable audio** after the remote
-track arrives to satisfy browser playback restrictions. The listener does not
-request microphone access. This implementation supports one listener per stream.
-
-## Local speech-to-text
-
-When the remote audio track arrives, English streaming speech recognition
-starts automatically in the browser with sherpa-onnx WebAssembly. Audio stays
-in the browser and is not sent to a speech provider. The first use downloads an
-approximately 44 MB English model from a pinned
-[Apache-2.0 Hugging Face model revision](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/tree/d42f2d9f7ca24806fb667456a18a9f1b60f70d16);
-this 2023 model uses sherpa's `zipformer` model type, not `zipformer2`. Model
-inference uses the listener's CPU. No API key or per-minute STT charge is
-required. The listener's browser must have enough memory and processing
-capacity for the model, and a slow device may show more transcription delay.
-
-Transcription reads the existing remote WebRTC audio and does not request
-microphone permission. Click **Enable audio** for playback; this gesture also
-resumes transcription if the browser suspends its audio processing. While
-running, the status reports the resampled input's RMS and peak levels in dBFS
-once per second; this measures levels only and does not record or send audio.
-Audio frames with RMS below -60 dBFS are passed to the recognizer as silence;
-the displayed meter shows the input level before this gate. Peaks close to
-0 dBFS can indicate clipping. When the remote audio ends or the room is left,
-the recognizer stops but the transcript stays visible.
-
-## ICE Servers
-
-The default Google STUN server is useful for local testing but cannot connect
-all NAT/firewall combinations. Set `WEBRTC_ICE_SERVERS` to a JSON-encoded array
-of ICE servers, including TURN, in your local defines file:
+Set the full `ACS_TOKEN_URL` endpoint in your ignored local `env.json`:
 
 ```json
 {
-	"WEBRTC_ICE_SERVERS": "[{\"urls\":[\"stun:stun.l.google.com:19302\"]},{\"urls\":[\"turns:turn.example.com:5349\"],\"username\":\"temporary-user\",\"credential\":\"temporary-password\"}]"
+	"ACS_TOKEN_URL": "https://your-authenticated-token-api.example/api/acsToken"
 }
 ```
 
-Configure working ICE servers on Swift as well. Use short-lived TURN credentials;
-compile-time defines are visible in the web bundle, not secret storage. For
-production, fetch credentials from your backend when creating the receiver.
-Supabase carries signaling only, not the audio. Use HTTPS outside localhost.
+Sign in with Microsoft in both apps and select the same event. The listener
+joins immediately, with outgoing microphone audio muted and no outgoing video.
+The browser supplies a disabled silent `LocalAudioStream` instead of a microphone
+stream: the ACS SDK otherwise waits for microphone permission while creating its
+offer, even when joining muted. `videoOptions` is omitted completely because an
+empty video-stream array still enables video initialization in this SDK.
+Only incoming audio can be unmuted by listener controls. Either app may join
+first; broadcaster Stop/Start removes/re-adds its participant in the same group.
+Broadcaster Pause/Resume mutes/unmutes its microphone within ACS. Listener Mute
+and Leave affect only that listener, never the broadcaster or other listeners.
+**Enable audio** calls the SDK's incoming-audio unmute API; playback remains
+subject to the browser's autoplay policy. Use HTTPS outside localhost.
+
+Rebuild with `npm run build` after changing the browser adapter. Its generated
+bundle is ignored by Git and must be built before Flutter run/build.
+
+## Broadcaster Compatibility
+
+The listener matches `ACSAudioStreamService` and `ACSCallConfig` in the Swift app:
+
+- UUID event IDs are used directly as the ACS group locator (case-insensitive).
+- Non-UUID/empty IDs use `7d9f1c20-5a34-4b67-8c12-3e6f90a2b451`.
+- Both apps currently list `event-1` through `event-4`, so all sample events share
+	that development group. They are **not isolated**. Use matching event UUIDs
+	in both apps for isolation; do not change just one client's mapping.
+- Both clients' ACS tokens must come from the **same ACS resource**.
+- The group locator is not the ACS SDK's generated call-instance ID.
+- No legacy `webrtc-signal`, remote-start commands, STUN or TURN settings are
+	used by the active listener. Legacy transport files/tests remain inactive,
+	matching the broadcaster's retained legacy implementation.
+
+Connected/waiting status is based on ACS call and participant state. ACS group
+participants do not carry application roles, so another listener can also
+appear as a connected participant. These indicators are not backend event-live
+status or proof of audible microphone audio.
+
+## Token Endpoint
+
+The receiver follows Swift's `ACSTokenService` request contract:
+
+- `GET` to the full `ACS_TOKEN_URL`, with a 30-second timeout.
+- `Accept: application/json`.
+- `Authorization: Bearer <Microsoft ID token>` from Microsoft sign-in, not a
+	Supabase token or Microsoft Graph access token.
+- `x-functions-key: <function key>` when `ACS_TOKEN_FUNCTION_KEY` is configured.
+
+The JSON response must contain `userId`, `token`,
+and ISO-8601 `expiresOn`; issue a token with the `voip` scope. The browser uses
+MSAL silent acquisition and ACS proactive token refresh during long calls.
+Authentication failures require signing in again.
+
+For controlled local testing against the same function used by Swift, set
+`ACS_TOKEN_URL` to that function's URL and optionally set `ACS_TOKEN_FUNCTION_KEY`
+in the ignored local defines file. The event page picks up that key through
+`ACSTokenService` automatically; it is not copied from the native app. A key
+compiled into Flutter web is **public**, even from an ignored file, so use a
+disposable development key only and never publish that build.
+
+Allow the listener origin in CORS, including preflight for `Authorization` and,
+for direct function requests, `x-functions-key`. The endpoint must accept the web app's Microsoft token audience and
+validate its tenant, issuer, audience, expiry, and user/event authorization.
+For production, leave `ACS_TOKEN_FUNCTION_KEY` unset and use a server-side
+authenticated proxy that supplies the function key, or a JWT-validated endpoint
+that does not require a browser-held key. The deployment workflow intentionally
+does not embed a function key. Never put ACS connection strings or resource keys
+in browser configuration. This client does not change backend authentication.
+
+## Optional Transcription
+
+Set `SUPABASE_URL`, `SUPABASE_KEY` (public anon/publishable only), and
+`SPEECH_TOKEN_URL` to retain the existing Azure Speech transcription flow.
+The receiver passes ACS's incoming mixed `MediaStream` to Azure Speech; audio
+is sent to that service. Supabase authenticates the existing speech token API,
+not the ACS call. Without these settings, audio listening still works.
+Playback mute does not stop transcription. Leaving the call stops transcription.
 
 ## Production deployment
 
@@ -73,28 +111,37 @@ a second deployment workflow. In GitHub, open **Settings > Secrets and variables
 | Type | Name | Value |
 | --- | --- | --- |
 | Secret | `AZURE_STATIC_WEB_APPS_API_TOKEN` | Deployment token from the target Azure Static Web App. |
-| Variable | `SUPABASE_URL` | Your Supabase project URL. |
-| Secret | `SUPABASE_KEY` | Supabase public anon or publishable key, never a service-role or secret key. |
-| Variable (optional) | `WEBRTC_ICE_SERVERS` | JSON array of ICE servers; defaults to Google STUN. |
+| Variable | `ACS_TOKEN_URL` | Full authenticated ACS token endpoint URL. |
+| Variable (optional) | `SUPABASE_URL` | Supabase project URL for transcription auth. |
+| Secret (optional) | `SUPABASE_KEY` | Supabase public anon or publishable key, never a service-role key. |
+| Variable (optional) | `SPEECH_TOKEN_URL` | Base URL of the existing speech token API. |
 
-The workflow does not use your ignored local `env.json`. Compile-time values,
-including the Supabase public key and any TURN credentials, are visible in the
-published JavaScript even when supplied through GitHub secrets. Use the runtime
-TURN credential approach described above for production connectivity.
+The workflow installs pinned npm dependencies, tests and bundles ACS, then
+builds Flutter. It does not use your ignored local `env.json`. All compile-time
+values are visible in the published JavaScript even when supplied as secrets.
 
 This workflow publishes static web files only; it does not provision Azure or
-deploy Supabase services. After deployment, open the Azure HTTPS URL and verify
-joining a room, remote audio playback, and transcription with the Swift app.
+deploy token services. Configure the token API and Microsoft redirect URI for
+the deployed HTTPS origin before testing with the Swift app.
 
 ## Verification
 
 ```sh
+npm ci
+npm test
+npm run build
 flutter analyze
+flutter test test/acs_token_test.dart
 flutter test --platform chrome
-flutter build web
+flutter build web --dart-define-from-file=env.json
 ```
 
-The browser regression tests use real local WebRTC peers and fake signaling to
-check discovery, receive-only SDP, ICE ordering, duplicate announcements,
-signaling failure, and cleanup. A physical iOS-to-browser test is still needed
-to verify microphone audio, Supabase authorization, and TURN across networks.
+ACS adapter tests use fake SDK objects to verify group resolution against Swift,
+muted audio-only joining, token refresh, local playback, broadcaster departure
+and return, disconnection, and cleanup. Token tests check the HTTP/auth contract
+and invalid credentials. Existing browser WebRTC tests cover legacy code only.
+
+A live iOS-to-browser test is required to verify Azure authorization/CORS,
+microphone audio, browser playback restrictions, and transcription. Test either
+join order, Pause/Resume, Stop/Start, multiple listeners, and leaving one listener
+without interrupting the broadcaster. Mocks cannot establish live connectivity.
