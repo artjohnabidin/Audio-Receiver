@@ -360,8 +360,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                                   await _disconnect();
                                   if (context.mounted) Navigator.of(context).pop();
                                 },
-                                icon: const Icon(Icons.call_end),
-                                label: const Text('Leave call'),
+                                icon: const Icon(Icons.exit_to_app),
+                                label: const Text('Leave stream'),
                               ),
                             ],
                           ),
