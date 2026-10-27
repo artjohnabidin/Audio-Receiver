@@ -1,6 +1,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -445,7 +446,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                     : Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
             ],
-            if (control != null) _buildBroadcasterControls(control),
+            if (control != null)
+              _buildBroadcasterControls(control, receiver?.state),
             const SizedBox(height: 16),
             Text(
               'Live Transcript',
@@ -496,16 +498,21 @@ class _EventDetailPageState extends State<EventDetailPage> {
     );
   }
 
-  Widget _buildBroadcasterControls(StreamControlChannel control) {
+  Widget _buildBroadcasterControls(
+    StreamControlChannel control,
+    ValueListenable<ReceiverState>? audioState,
+  ) {
     return ListenableBuilder(
       listenable: Listenable.merge([
         control.connected,
         control.broadcasterState,
         control.error,
+        ?audioState,
       ]),
       builder: (context, _) {
         final state = control.broadcasterState.value;
         final enabled = control.connected.value &&
+            audioState?.value == ReceiverState.connected &&
             !_sendingControl &&
             state != BroadcasterStreamState.stopped;
         final paused = state == BroadcasterStreamState.paused;
