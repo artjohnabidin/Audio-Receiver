@@ -38,8 +38,6 @@ class SpeechTranscriber {
     required SpeechToken token,
     required Future<SpeechToken> Function() refreshToken,
   }) async {
-    debugPrint('SpeechTranscriber.start() called');
-    
     _stopped = false;
     status.value = 'Connecting to Azure Speech';
     try {
