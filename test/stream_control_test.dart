@@ -91,6 +91,30 @@ void main() {
     expect(socket.closed, isTrue);
   });
 
+  test('publishes start from standby without claiming the broadcaster is live', () async {
+    final channel = makeChannel();
+    await channel.connect();
+
+    for (final state in [
+      BroadcasterStreamState.unknown,
+      BroadcasterStreamState.stopped,
+    ]) {
+      channel.broadcasterState.value = state;
+      final sending = channel.send(StreamControlAction.start);
+      await Future<void>.delayed(Duration.zero);
+      final frame = socket.sent.last;
+      expect(frame['type'], 'sendToGroup');
+      expect(frame['group'], 'event.event-1');
+      expect(frame['noEcho'], isTrue);
+      expect(frame['data'], containsPair('action', 'start'));
+      expect(frame['data'], containsPair('source', 'listener'));
+      socket.ack(frame['ackId'] as int);
+      await sending;
+      expect(channel.broadcasterState.value, state);
+    }
+    await channel.close();
+  });
+
   test('publishes pause to the event group and waits for ack', () async {
     final channel = makeChannel();
     await channel.connect();
@@ -156,6 +180,10 @@ void main() {
     expect(channel.broadcasterState.value, BroadcasterStreamState.live);
 
     deliver('stop');
+    await Future<void>.delayed(Duration.zero);
+    expect(channel.broadcasterState.value, BroadcasterStreamState.stopped);
+
+    deliver('start', source: 'listener');
     await Future<void>.delayed(Duration.zero);
     expect(channel.broadcasterState.value, BroadcasterStreamState.stopped);
 

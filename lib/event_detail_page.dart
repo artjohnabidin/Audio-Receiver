@@ -511,6 +511,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
       ]),
       builder: (context, _) {
         final state = control.broadcasterState.value;
+        final canStart = control.connected.value &&
+            !_sendingControl &&
+            (state == BroadcasterStreamState.unknown ||
+                state == BroadcasterStreamState.stopped);
         final enabled = control.connected.value &&
             audioState?.value == ReceiverState.connected &&
             !_sendingControl &&
@@ -536,7 +540,15 @@ class _EventDetailPageState extends State<EventDetailPage> {
             ),
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: [
+                FilledButton.icon(
+                  onPressed: canStart
+                      ? () => _sendControl(StreamControlAction.start)
+                      : null,
+                  icon: const Icon(Icons.play_arrow),
+                  label: const Text('Start stream'),
+                ),
                 FilledButton.icon(
                   onPressed: enabled
                       ? () => _sendControl(paused

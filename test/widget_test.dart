@@ -10,6 +10,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/testing.dart';
 import 'package:web/web.dart' as web;
 
 import 'package:audio_receiver/acs_audio_receiver.dart';
@@ -17,9 +18,83 @@ import 'package:audio_receiver/event_detail_page.dart';
 import 'package:audio_receiver/event_dto.dart';
 import 'package:audio_receiver/main.dart';
 import 'package:audio_receiver/speech_token.dart';
+import 'package:audio_receiver/stream_control.dart';
 import 'package:flutter/material.dart';
 
+class _ControlChannelStub extends StreamControlChannel {
+  _ControlChannelStub()
+      : super(
+          eventId: 'event-1',
+          negotiateUrl: 'https://control.example.com',
+          httpClient: MockClient((_) async => throw UnimplementedError()),
+          fetchIdToken: () async => 'test-token',
+          fetchUserId: () async => 'test-user',
+          connectSocket: (_) async => throw UnimplementedError(),
+        );
+
+  final sent = <StreamControlAction>[];
+
+  @override
+  Future<void> connect() async => connected.value = true;
+
+  @override
+  Future<void> send(StreamControlAction action) async => sent.add(action);
+
+  @override
+  Future<void> close() async => connected.value = false;
+}
+
 void main() {
+  testWidgets('remote start is enabled while waiting for the broadcaster', (tester) async {
+    final control = _ControlChannelStub();
+    final bridge = JSObject();
+    bridge.setProperty('start'.toJS, ((JSString eventId, JSFunction fetchToken) {
+      return Future<JSAny?>.value().toJS;
+    }).toJS);
+    bridge.setProperty('stop'.toJS, (() => Future<JSAny?>.value().toJS).toJS);
+    final factory = JSObject();
+    factory.setProperty('create'.toJS, ((JSFunction state, JSFunction audio, JSFunction error) {
+      state.callAsFunction(null, 'waitingForBroadcaster'.toJS);
+      return bridge;
+    }).toJS);
+    globalContext.setProperty('acsAudioReceiver'.toJS, factory);
+    addTearDown(() => globalContext.delete('acsAudioReceiver'.toJS));
+
+    await tester.pumpWidget(MaterialApp(home: EventDetailPage(
+      event: events.first,
+      createReceiver: () => ACSAudioReceiver(eventId: 'event-1', fetchToken: () async => 'acs-token'),
+      createControlChannel: () => control,
+    )));
+    await tester.runAsync(() async {
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pump(const Duration(milliseconds: 200));
+
+    FilledButton button(String label) => tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, label),
+    );
+    expect(button('Start stream').onPressed, isNotNull);
+    expect(button('Pause stream').onPressed, isNull);
+    expect(button('Stop stream').onPressed, isNull);
+    await tester.ensureVisible(find.text('Start stream'));
+    await tester.tap(find.text('Start stream'));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(control.sent, [StreamControlAction.start]);
+
+    control.broadcasterState.value = BroadcasterStreamState.live;
+    await tester.pump();
+    expect(button('Start stream').onPressed, isNull);
+    control.broadcasterState.value = BroadcasterStreamState.stopped;
+    await tester.pump();
+    expect(button('Start stream').onPressed, isNotNull);
+    control.connected.value = false;
+    await tester.pump();
+    expect(button('Start stream').onPressed, isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   test(
     'ACS bridge forwards the event and token and rejects late callbacks',
     () async {

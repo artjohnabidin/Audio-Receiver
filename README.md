@@ -44,9 +44,8 @@ The listener matches `ACSAudioStreamService` and `ACSCallConfig` in the Swift ap
 
 - UUID event IDs are used directly as the ACS group locator (case-insensitive).
 - Non-UUID/empty IDs use `7d9f1c20-5a34-4b67-8c12-3e6f90a2b451`.
-- Both apps currently list `event-1` through `event-4`, so all sample events share
-	that development group. They are **not isolated**. Use matching event UUIDs
-	in both apps for isolation; do not change just one client's mapping.
+- Both apps use the same four fixed UUIDs for the sample events, giving each
+	event a separate ACS group. Keep the IDs identical in both apps.
 - Both clients' ACS tokens must come from the **same ACS resource**.
 - The group locator is not the ACS SDK's generated call-instance ID.
 - No legacy `webrtc-signal`, remote-start commands, STUN or TURN settings are
@@ -112,7 +111,7 @@ a second deployment workflow. In GitHub, open **Settings > Secrets and variables
 | --- | --- | --- |
 | Secret | `AZURE_STATIC_WEB_APPS_API_TOKEN` | Deployment token from the target Azure Static Web App. |
 | Variable | `ACS_TOKEN_URL` | Full authenticated ACS token endpoint URL. |
-| Variable | `STREAM_CONTROL_NEGOTIATE_URL` | Web PubSub negotiate endpoint for remote Pause/Resume/Stop. |
+| Variable | `STREAM_CONTROL_NEGOTIATE_URL` | Web PubSub negotiate endpoint for remote Start/Pause/Resume/Stop. |
 | Variable (optional) | `SUPABASE_URL` | Supabase project URL for transcription auth. |
 | Secret (optional) | `SUPABASE_KEY` | Supabase public anon or publishable key, never a service-role key. |
 | Variable (optional) | `SPEECH_TOKEN_URL` | Base URL of the existing speech token API. |

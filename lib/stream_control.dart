@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 /// Subprotocol that lets clients publish to groups directly through Web PubSub.
 const webPubSubJsonProtocol = 'json.webpubsub.azure.v1';
 
-enum StreamControlAction { pause, resume, stop }
+enum StreamControlAction { start, pause, resume, stop }
 
 enum BroadcasterStreamState { unknown, live, paused, stopped }
 
@@ -78,7 +78,9 @@ class StreamControlChannel {
         'sentAt': DateTime.now().toUtc().toIso8601String(),
       },
     });
-    if (!_closed) broadcasterState.value = _stateFor(action);
+    if (!_closed && action != StreamControlAction.start) {
+      broadcasterState.value = _stateFor(action);
+    }
   }
 
   Future<void> _sendWithAck(Map<String, Object?> frame) async {
@@ -208,7 +210,9 @@ class StreamControlChannel {
           return;
         }
         if (data['action'] == 'start') {
-          broadcasterState.value = BroadcasterStreamState.live;
+          if (data['source'] == 'broadcaster') {
+            broadcasterState.value = BroadcasterStreamState.live;
+          }
           return;
         }
         final action = StreamControlAction.values
@@ -263,6 +267,7 @@ class StreamControlChannel {
 
   static BroadcasterStreamState _stateFor(StreamControlAction action) =>
       switch (action) {
+        StreamControlAction.start => BroadcasterStreamState.unknown,
         StreamControlAction.pause => BroadcasterStreamState.paused,
         StreamControlAction.resume => BroadcasterStreamState.live,
         StreamControlAction.stop => BroadcasterStreamState.stopped,
