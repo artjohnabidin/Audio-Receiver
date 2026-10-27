@@ -72,7 +72,12 @@
         const detected =
           sdk.AutoDetectSourceLanguageResult.fromResult(result);
 
-        return detected.language || 'unknown';
+        const languageMap = {
+          'ja-JP': 'nihongo',
+          'en-US': 'english',
+        };
+
+        return languageMap[detected.language] || 'unknown';
       } catch (error) {
         console.warn('Could not determine detected language:', error);
         return 'unknown';
@@ -81,33 +86,41 @@
 
     try {
       const speechConfig =
-        sdk.SpeechConfig.fromAuthorizationToken(token, region);
+      sdk.SpeechConfig.fromAuthorizationToken(token, region);
 
-      session.speechConfig = speechConfig;
+    // Enable language detection throughout the recognition session.
+    speechConfig.setProperty(
+      sdk.PropertyId.SpeechServiceConnection_LanguageIdMode,
+      'Continuous'
+    );
 
-      // Automatically identify Japanese or US English.
-      const autoDetect =
-        sdk.AutoDetectSourceLanguageConfig.fromLanguages([
-          'ja-JP',
-          'en-US',
-        ]);
+    const autoDetect =
+      sdk.AutoDetectSourceLanguageConfig.fromLanguages([
+        'ja-JP',
+        'en-US',
+      ]);
 
-      session.audioConfig = sdk.AudioConfig.fromStreamInput(stream);
+    session.audioConfig = sdk.AudioConfig.fromStreamInput(stream);
 
-      // Use automatic language identification instead of
-      // hard-coding speechRecognitionLanguage = 'en-US'.
-      session.recognizer = sdk.SpeechRecognizer.FromConfig(
-        speechConfig,
-        autoDetect,
-        session.audioConfig
-      );
+    session.recognizer = sdk.SpeechRecognizer.FromConfig(
+      speechConfig,
+      autoDetect,
+      session.audioConfig
+    );
 
       session.recognizer.recognizing = (_sender, event) => {
         if (session.stopped) return;
 
-        const text = event.result?.text?.trim();
+        const result = event.result;
+        const text = result?.text?.trim();
 
         if (text) {
+          const language = getDetectedLanguage(result);
+
+          console.info('[Azure Speech] Interim language:', language);
+          console.info('[Azure Speech] Interim transcript:', text);
+
+          setStatus(session, `Detected ${language}: ${text}`);
           onTranscript(text, false);
         }
       };
