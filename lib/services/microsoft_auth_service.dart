@@ -24,6 +24,14 @@ class MicrosoftAuthService {
     );
   }
 
+  static Future<String> currentUserId() async {
+    final account = instance.getActiveAccount();
+    if (account == null || account.localAccountId.isEmpty) {
+      throw StateError('Please sign in with Microsoft again.');
+    }
+    return account.localAccountId;
+  }
+
   static Future<String> acquireIdToken() async {
     final account = instance.getActiveAccount();
     if (account == null) {

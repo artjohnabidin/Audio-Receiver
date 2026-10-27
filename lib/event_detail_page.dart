@@ -11,18 +11,23 @@ import 'services/microsoft_auth_service.dart';
 import 'speech_token.dart';
 import 'speech_transcriber.dart';
 import 'event_dto.dart';
+import 'stream_control.dart';
+import 'stream_control_browser_socket.dart';
 
 // Use the same configuration values as main.dart.
 const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_KEY');
 const speechTokenUrl = String.fromEnvironment('SPEECH_TOKEN_URL');
 const acsTokenUrl = String.fromEnvironment('ACS_TOKEN_URL');
+const streamControlNegotiateUrl =
+    String.fromEnvironment('STREAM_CONTROL_NEGOTIATE_URL');
 
 class EventDetailPage extends StatefulWidget {
   final EventDTO event;
   final VoidCallback? onDisconnected;
   final ACSAudioReceiver Function()? createReceiver;
   final Future<SpeechToken> Function()? fetchSpeechToken;
+  final StreamControlChannel Function()? createControlChannel;
 
   const EventDetailPage({
     super.key,
@@ -30,6 +35,7 @@ class EventDetailPage extends StatefulWidget {
     this.onDisconnected,
     this.createReceiver,
     this.fetchSpeechToken,
+    this.createControlChannel,
   });
 
   @override
@@ -40,6 +46,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
   final http.Client _httpClient = http.Client();
 
   ACSAudioReceiver? _receiver;
+  StreamControlChannel? _control;
+  bool _sendingControl = false;
   SpeechTranscriber? _transcriber;
   VoidCallback? _audioListener;
   Future<void> _audioQueue = Future<void>.value();
@@ -106,6 +114,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
       receiver.audioAvailable.addListener(onAudioChanged);
 
       setState(() => _connecting = true);
+      unawaited(_connectControl());
 
       await receiver.start();
 
@@ -123,6 +132,63 @@ class _EventDetailPageState extends State<EventDetailPage> {
       }
 
       await _disconnect();
+    }
+  }
+
+  Future<void> _connectControl() async {
+    final control = widget.createControlChannel?.call() ??
+        (streamControlNegotiateUrl.isEmpty
+            ? null
+            : StreamControlChannel(
+                eventId: widget.event.id,
+                negotiateUrl: streamControlNegotiateUrl,
+                httpClient: _httpClient,
+                fetchIdToken: MicrosoftAuthService.acquireIdToken,
+                fetchUserId: MicrosoftAuthService.currentUserId,
+                connectSocket: BrowserStreamControlSocket.connect,
+              ));
+    if (control == null || _disposed || !mounted) return;
+    setState(() => _control = control);
+    try {
+      await control.connect();
+    } catch (error) {
+      debugPrint('Stream control connection failed: $error');
+      if (!_disposed) control.error.value = 'Remote control unavailable: $error';
+    }
+  }
+
+  Future<void> _sendControl(StreamControlAction action) async {
+    final control = _control;
+    if (control == null || _sendingControl) return;
+    if (action == StreamControlAction.stop) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Stop the broadcast?'),
+          content: const Text(
+            'This ends the stream on the broadcaster device for all listeners.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Stop stream'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    setState(() => _sendingControl = true);
+    try {
+      await control.send(action);
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Remote ${action.name} failed: $error');
+    } finally {
+      if (mounted) setState(() => _sendingControl = false);
     }
   }
 
@@ -214,6 +280,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
       receiver.audioAvailable.removeListener(listener);
     }
 
+    await _control?.close();
     await _stopTranscription();
     await receiver?.stop();
 
@@ -247,6 +314,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
     unawaited(
       receiver?.stop() ?? Future<void>.value(),
     );
+    unawaited(_control?.close() ?? Future<void>.value());
 
     _httpClient.close();
 
@@ -257,6 +325,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
   Widget build(BuildContext context) {
     final event = widget.event;
     final receiver = _receiver;
+    final control = _control;
     final transcriber = _transcriber;
 
     return Scaffold(
@@ -376,6 +445,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
                     : Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
             ],
+            if (control != null) _buildBroadcasterControls(control),
             const SizedBox(height: 16),
             Text(
               'Live Transcript',
@@ -423,6 +493,76 @@ class _EventDetailPageState extends State<EventDetailPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildBroadcasterControls(StreamControlChannel control) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        control.connected,
+        control.broadcasterState,
+        control.error,
+      ]),
+      builder: (context, _) {
+        final state = control.broadcasterState.value;
+        final enabled = control.connected.value &&
+            !_sendingControl &&
+            state != BroadcasterStreamState.stopped;
+        final paused = state == BroadcasterStreamState.paused;
+        final controlError = control.error.value;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                control.connected.value ? Icons.settings_remote : Icons.portable_wifi_off,
+              ),
+              title: const Text('Broadcaster controls'),
+              subtitle: Text(switch (state) {
+                _ when !control.connected.value => 'Remote control connecting',
+                BroadcasterStreamState.unknown => 'Remote control ready',
+                BroadcasterStreamState.live => 'Broadcaster is live',
+                BroadcasterStreamState.paused => 'Broadcaster is paused',
+                BroadcasterStreamState.stopped => 'Broadcaster stopped streaming',
+              }),
+            ),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: enabled
+                      ? () => _sendControl(paused
+                          ? StreamControlAction.resume
+                          : StreamControlAction.pause)
+                      : null,
+                  icon: Icon(paused ? Icons.play_arrow : Icons.pause),
+                  label: Text(paused ? 'Resume stream' : 'Pause stream'),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Theme.of(context).colorScheme.onError,
+                  ),
+                  onPressed: enabled
+                      ? () => _sendControl(StreamControlAction.stop)
+                      : null,
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop stream'),
+                ),
+              ],
+            ),
+            if (controlError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  controlError,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

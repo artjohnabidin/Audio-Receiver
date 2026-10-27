@@ -22,6 +22,7 @@ jobs:
       WEBRTC_ICE_SERVERS: ${{ vars.WEBRTC_ICE_SERVERS || '[{"urls":"stun:stun.l.google.com:19302"}]' }}
       SPEECH_TOKEN_URL: ${{ vars.SPEECH_TOKEN_URL }}
       ACS_TOKEN_URL: ${{ vars.ACS_TOKEN_URL }}
+      STREAM_CONTROL_NEGOTIATE_URL: ${{ vars.STREAM_CONTROL_NEGOTIATE_URL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +39,7 @@ jobs:
           test -n "$SUPABASE_KEY" || { echo "::error::Set the SUPABASE_KEY repository secret (public anon or publishable key only)."; exit 1; }
           test -n "$SPEECH_TOKEN_URL" || { echo "::error::Set the SPEECH_TOKEN_URL repository secret (public anon or publishable key only)."; exit 1; }
           test -n "$ACS_TOKEN_URL" || { echo "::error::Set the ACS_TOKEN_URL repository variable."; exit 1; }
+          test -n "$STREAM_CONTROL_NEGOTIATE_URL" || { echo "::error::Set the STREAM_CONTROL_NEGOTIATE_URL repository variable."; exit 1; }
           printf '%s' "$WEBRTC_ICE_SERVERS" | jq -e 'type == "array" and length > 0 and all(.[]; type == "object" and has("urls"))' > /dev/null
 
       - name: Install dependencies
@@ -51,7 +53,8 @@ jobs:
             --dart-define="SUPABASE_KEY=$SUPABASE_KEY" \
             --dart-define="WEBRTC_ICE_SERVERS=$WEBRTC_ICE_SERVERS" \
             --dart-define="SPEECH_TOKEN_URL=$SPEECH_TOKEN_URL" \
-            --dart-define="ACS_TOKEN_URL=$ACS_TOKEN_URL"
+            --dart-define="ACS_TOKEN_URL=$ACS_TOKEN_URL" \
+            --dart-define="STREAM_CONTROL_NEGOTIATE_URL=$STREAM_CONTROL_NEGOTIATE_URL"
 
       - name: Deploy to Azure
         uses: Azure/static-web-apps-deploy@v1

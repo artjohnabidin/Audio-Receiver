@@ -112,6 +112,7 @@ a second deployment workflow. In GitHub, open **Settings > Secrets and variables
 | --- | --- | --- |
 | Secret | `AZURE_STATIC_WEB_APPS_API_TOKEN` | Deployment token from the target Azure Static Web App. |
 | Variable | `ACS_TOKEN_URL` | Full authenticated ACS token endpoint URL. |
+| Variable | `STREAM_CONTROL_NEGOTIATE_URL` | Web PubSub negotiate endpoint for remote Pause/Resume/Stop. |
 | Variable (optional) | `SUPABASE_URL` | Supabase project URL for transcription auth. |
 | Secret (optional) | `SUPABASE_KEY` | Supabase public anon or publishable key, never a service-role key. |
 | Variable (optional) | `SPEECH_TOKEN_URL` | Base URL of the existing speech token API. |
