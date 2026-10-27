@@ -101,9 +101,9 @@ export function createSpeechTokenHandler({
     console.error('STEP 3: JWT verification starting');
 
     try {
-      console.error('STEP 4: JWT verification passed');
       await verifyToken(match[1], env);
-    } catch {
+      console.error('STEP 4: JWT verification passed');
+    } catch (error) {
       console.error('JWT verification failed:', error);
       log.error('Supabase JWT verification failed', {
         name: error?.name,
