@@ -67,6 +67,8 @@
 
     activeSession = session;
 
+    let lastDetectedLanguage = 'speech';
+
     function getDetectedLanguage(result) {
       try {
         const detected =
@@ -77,7 +79,13 @@
           'en-US': 'english',
         };
 
-        return languageMap[detected.language] || 'unknown';
+        const language = languageMap[detected.language];
+
+        if (language) {
+          lastDetectedLanguage = language;
+        }
+
+        return lastDetectedLanguage;
       } catch (error) {
         console.warn('Could not determine detected language:', error);
         return 'unknown';

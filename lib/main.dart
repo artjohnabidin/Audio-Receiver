@@ -160,15 +160,10 @@ class _ReceiverPageState extends State<ReceiverPage> {
                                 ),
                                 title: Text.rich(
                                   TextSpan(
-                                    children: [
-                                      TextSpan(
-                                        text: '${event.id.toUpperCase()} - ',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      TextSpan(text: event.title),
-                                    ],
+                                    text: event.title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                                 subtitle: Text(
