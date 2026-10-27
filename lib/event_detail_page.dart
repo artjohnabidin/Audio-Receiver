@@ -513,6 +513,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
         final state = control.broadcasterState.value;
         final canStart = control.connected.value &&
             !_sendingControl &&
+          (audioState?.value != ReceiverState.connected ||
+            state == BroadcasterStreamState.stopped) &&
             (state == BroadcasterStreamState.unknown ||
                 state == BroadcasterStreamState.stopped);
         final enabled = control.connected.value &&

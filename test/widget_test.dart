@@ -47,6 +47,7 @@ class _ControlChannelStub extends StreamControlChannel {
 void main() {
   testWidgets('remote start is enabled while waiting for the broadcaster', (tester) async {
     final control = _ControlChannelStub();
+    late JSFunction onState;
     final bridge = JSObject();
     bridge.setProperty('start'.toJS, ((JSString eventId, JSFunction fetchToken) {
       return Future<JSAny?>.value().toJS;
@@ -54,6 +55,7 @@ void main() {
     bridge.setProperty('stop'.toJS, (() => Future<JSAny?>.value().toJS).toJS);
     final factory = JSObject();
     factory.setProperty('create'.toJS, ((JSFunction state, JSFunction audio, JSFunction error) {
+      onState = state;
       state.callAsFunction(null, 'waitingForBroadcaster'.toJS);
       return bridge;
     }).toJS);
@@ -76,6 +78,18 @@ void main() {
     expect(button('Start stream').onPressed, isNotNull);
     expect(button('Pause stream').onPressed, isNull);
     expect(button('Stop stream').onPressed, isNull);
+    onState.callAsFunction(null, 'connected'.toJS);
+    await tester.pump();
+    expect(button('Start stream').onPressed, isNull);
+    control.broadcasterState.value = BroadcasterStreamState.stopped;
+    await tester.pump();
+    expect(button('Start stream').onPressed, isNotNull);
+    control.broadcasterState.value = BroadcasterStreamState.unknown;
+    await tester.pump();
+    expect(button('Start stream').onPressed, isNull);
+    onState.callAsFunction(null, 'waitingForBroadcaster'.toJS);
+    await tester.pump();
+    expect(button('Start stream').onPressed, isNotNull);
     await tester.ensureVisible(find.text('Start stream'));
     await tester.tap(find.text('Start stream'));
     await tester.pump(const Duration(milliseconds: 200));
