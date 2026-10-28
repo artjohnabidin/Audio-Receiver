@@ -1,4 +1,5 @@
 export const fallbackGroupId = '7d9f1c20-5a34-4b67-8c12-3e6f90a2b451';
+const listenerDisplayName = 'Audio listener';
 
 export function resolveGroupId(eventId) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId)
@@ -27,6 +28,10 @@ export function createReceiver({ CallClient, AzureCommunicationTokenCredential, 
   const applyPlaybackMute = () => playbackMuted
     ? call.muteIncomingAudio()
     : call.unmuteIncomingAudio();
+  const hasConnectedBroadcaster = () => call?.remoteParticipants.some(
+    participant => participant.state === 'Connected'
+      && participant.displayName !== listenerDisplayName,
+  ) ?? false;
   const stateChanged = () => {
     if (closed) return;
     if (call.state === 'Disconnected') {
@@ -38,8 +43,7 @@ export function createReceiver({ CallClient, AzureCommunicationTokenCredential, 
     } else if (call.state === 'Connected') {
       clearTimeout(timer);
       void applyPlaybackMute().catch(report);
-      const present = call.remoteParticipants.some(participant => participant.state === 'Connected');
-      callbacks.onState(present ? 'connected' : 'waitingForBroadcaster');
+      callbacks.onState(hasConnectedBroadcaster() ? 'connected' : 'waitingForBroadcaster');
     } else {
       callbacks.onState('connecting');
     }
@@ -47,7 +51,9 @@ export function createReceiver({ CallClient, AzureCommunicationTokenCredential, 
   const audioChanged = async () => {
     const version = ++streamVersion;
     try {
-      const remote = call.state === 'Connected' ? call.remoteAudioStreams[0] : null;
+      const remote = call.state === 'Connected' && hasConnectedBroadcaster()
+        ? call.remoteAudioStreams[0]
+        : null;
       const stream = remote ? await remote.getMediaStream() : null;
       if (!closed && version === streamVersion) {
         if (stream) await applyPlaybackMute();
@@ -56,14 +62,16 @@ export function createReceiver({ CallClient, AzureCommunicationTokenCredential, 
     } catch (error) { report(error); }
   };
   const participants = new Set();
+  const participantChanged = () => {
+    stateChanged();
+    void audioChanged();
+  };
   const participantsChanged = () => {
     for (const participant of call.remoteParticipants) {
       if (!participants.has(participant)) {
         participants.add(participant);
-        subscribe(participant, 'stateChanged', () => {
-          stateChanged();
-          void audioChanged();
-        });
+        subscribe(participant, 'stateChanged', participantChanged);
+        subscribe(participant, 'displayNameChanged', participantChanged);
       }
     }
     stateChanged();
@@ -93,7 +101,7 @@ export function createReceiver({ CallClient, AzureCommunicationTokenCredential, 
           token, tokenRefresher: fetchToken, refreshProactively: true,
         });
         client = new CallClient();
-        const createdAgent = await client.createCallAgent(credential, { displayName: 'Audio listener' });
+        const createdAgent = await client.createCallAgent(credential, { displayName: listenerDisplayName });
         if (closed) { await createdAgent.dispose(); return; }
         agent = createdAgent;
         timer = setTimeout(() => {

@@ -23,14 +23,14 @@ import 'package:flutter/material.dart';
 
 class _ControlChannelStub extends StreamControlChannel {
   _ControlChannelStub()
-      : super(
-          eventId: 'event-1',
-          negotiateUrl: 'https://control.example.com',
-          httpClient: MockClient((_) async => throw UnimplementedError()),
-          fetchIdToken: () async => 'test-token',
-          fetchUserId: () async => 'test-user',
-          connectSocket: (_) async => throw UnimplementedError(),
-        );
+    : super(
+        eventId: 'event-1',
+        negotiateUrl: 'https://control.example.com',
+        httpClient: MockClient((_) async => throw UnimplementedError()),
+        fetchIdToken: () async => 'test-token',
+        fetchUserId: () async => 'test-user',
+        connectSocket: (_) async => throw UnimplementedError(),
+      );
 
   final sent = <StreamControlAction>[];
 
@@ -45,36 +45,50 @@ class _ControlChannelStub extends StreamControlChannel {
 }
 
 void main() {
-  testWidgets('remote start is enabled while waiting for the broadcaster', (tester) async {
+  testWidgets('remote start is enabled while waiting for the broadcaster', (
+    tester,
+  ) async {
     final control = _ControlChannelStub();
     late JSFunction onState;
     final bridge = JSObject();
-    bridge.setProperty('start'.toJS, ((JSString eventId, JSFunction fetchToken) {
-      return Future<JSAny?>.value().toJS;
-    }).toJS);
+    bridge.setProperty(
+      'start'.toJS,
+      ((JSString eventId, JSFunction fetchToken) {
+        return Future<JSAny?>.value().toJS;
+      }).toJS,
+    );
     bridge.setProperty('stop'.toJS, (() => Future<JSAny?>.value().toJS).toJS);
     final factory = JSObject();
-    factory.setProperty('create'.toJS, ((JSFunction state, JSFunction audio, JSFunction error) {
-      onState = state;
-      state.callAsFunction(null, 'waitingForBroadcaster'.toJS);
-      return bridge;
-    }).toJS);
+    factory.setProperty(
+      'create'.toJS,
+      ((JSFunction state, JSFunction audio, JSFunction error) {
+        onState = state;
+        state.callAsFunction(null, 'waitingForBroadcaster'.toJS);
+        return bridge;
+      }).toJS,
+    );
     globalContext.setProperty('acsAudioReceiver'.toJS, factory);
     addTearDown(() => globalContext.delete('acsAudioReceiver'.toJS));
 
-    await tester.pumpWidget(MaterialApp(home: EventDetailPage(
-      event: events.first,
-      createReceiver: () => ACSAudioReceiver(eventId: 'event-1', fetchToken: () async => 'acs-token'),
-      createControlChannel: () => control,
-    )));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventDetailPage(
+          event: events.first,
+          createReceiver: () => ACSAudioReceiver(
+            eventId: 'event-1',
+            fetchToken: () async => 'acs-token',
+          ),
+          createControlChannel: () => control,
+        ),
+      ),
+    );
     await tester.runAsync(() async {
       await Future<void>.delayed(Duration.zero);
     });
     await tester.pump(const Duration(milliseconds: 200));
 
-    FilledButton button(String label) => tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, label),
-    );
+    FilledButton button(String label) =>
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, label));
     expect(button('Start stream').onPressed, isNotNull);
     expect(button('Pause stream').onPressed, isNull);
     expect(button('Stop stream').onPressed, isNull);
@@ -223,30 +237,64 @@ void main() {
     expect(receiver.state.value, ReceiverState.disconnected);
   });
 
-  testWidgets('starts STT automatically on the latest incoming ACS audio', (tester) async {
+  testWidgets('starts STT automatically on the latest incoming ACS audio', (
+    tester,
+  ) async {
     final firstStream = web.MediaStream();
     final secondStream = web.MediaStream();
     final transcribedStreams = <web.MediaStream>[];
     late JSFunction audioCallback;
     final bridge = JSObject();
-    bridge.setProperty('start'.toJS, ((JSString eventId, JSFunction fetchToken) {
-      audioCallback.callAsFunction(null, firstStream);
-      return Future<JSAny?>.value().toJS;
-    }).toJS);
+    bridge.setProperty(
+      'start'.toJS,
+      ((JSString eventId, JSFunction fetchToken) {
+        audioCallback.callAsFunction(null, firstStream);
+        return Future<JSAny?>.value().toJS;
+      }).toJS,
+    );
     bridge.setProperty('stop'.toJS, (() => Future<JSAny?>.value().toJS).toJS);
     final factory = JSObject();
-    factory.setProperty('create'.toJS, ((JSFunction state, JSFunction audio, JSFunction error) {
-      audioCallback = audio;
-      return bridge;
-    }).toJS);
+    factory.setProperty(
+      'create'.toJS,
+      ((JSFunction state, JSFunction audio, JSFunction error) {
+        audioCallback = audio;
+        return bridge;
+      }).toJS,
+    );
     globalContext.setProperty('acsAudioReceiver'.toJS, factory);
     final speech = JSObject();
-    speech.setProperty('start'.toJS, ((web.MediaStream stream, JSString token,
-        JSString region, JSFunction transcript, JSFunction status) {
-      transcribedStreams.add(stream);
-      transcript.callAsFunction(null, 'Live keynote transcript'.toJS, true.toJS);
-      return Future<JSAny?>.value().toJS;
-    }).toJS);
+    speech.setProperty(
+      'start'.toJS,
+      ((
+            web.MediaStream stream,
+            JSString token,
+            JSString region,
+            JSFunction transcript,
+            JSFunction status,
+          ) {
+            transcribedStreams.add(stream);
+            transcript.callAsFunction(
+              null,
+              'Interim phrase'.toJS,
+              'Guest-1'.toJS,
+              false.toJS,
+            );
+            transcript.callAsFunction(
+              null,
+              'Live keynote transcript'.toJS,
+              'Guest-1'.toJS,
+              true.toJS,
+            );
+            transcript.callAsFunction(
+              null,
+              'A second recognized phrase'.toJS,
+              'Guest-2'.toJS,
+              true.toJS,
+            );
+            return Future<JSAny?>.value().toJS;
+          })
+          .toJS,
+    );
     speech.setProperty('stop'.toJS, (() => Future<JSAny?>.value().toJS).toJS);
     globalContext.setProperty('azureSpeechTranscriber'.toJS, speech);
     addTearDown(() {
@@ -254,13 +302,25 @@ void main() {
       globalContext.delete('azureSpeechTranscriber'.toJS);
     });
     final pendingToken = Completer<SpeechToken>();
-    final token = SpeechToken(token: 'speech-token', region: 'japaneast', expiresIn: 540);
+    final token = SpeechToken(
+      token: 'speech-token',
+      region: 'japaneast',
+      expiresIn: 540,
+    );
     var tokenRequests = 0;
-    await tester.pumpWidget(MaterialApp(home: EventDetailPage(
-      event: events.first,
-      createReceiver: () => ACSAudioReceiver(eventId: 'event-1', fetchToken: () async => 'acs-token'),
-      fetchSpeechToken: () => ++tokenRequests == 1 ? pendingToken.future : Future.value(token),
-    )));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EventDetailPage(
+          event: events.first,
+          createReceiver: () => ACSAudioReceiver(
+            eventId: 'event-1',
+            fetchToken: () async => 'acs-token',
+          ),
+          fetchSpeechToken: () =>
+              ++tokenRequests == 1 ? pendingToken.future : Future.value(token),
+        ),
+      ),
+    );
     await tester.runAsync(() async {
       await Future<void>.delayed(Duration.zero);
     });
@@ -274,6 +334,10 @@ void main() {
     await tester.pump();
     expect(transcribedStreams, [secondStream]);
     expect(find.text('Live keynote transcript'), findsOneWidget);
+    expect(find.text('A second recognized phrase'), findsOneWidget);
+    expect(find.text('Interim phrase'), findsNothing);
+    expect(find.text('Guest 1'), findsOneWidget);
+    expect(find.text('Guest 2'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });

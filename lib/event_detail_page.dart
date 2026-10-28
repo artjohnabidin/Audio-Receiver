@@ -1,4 +1,3 @@
-
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -20,8 +19,9 @@ const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
 const supabaseAnonKey = String.fromEnvironment('SUPABASE_KEY');
 const speechTokenUrl = String.fromEnvironment('SPEECH_TOKEN_URL');
 const acsTokenUrl = String.fromEnvironment('ACS_TOKEN_URL');
-const streamControlNegotiateUrl =
-    String.fromEnvironment('STREAM_CONTROL_NEGOTIATE_URL');
+const streamControlNegotiateUrl = String.fromEnvironment(
+  'STREAM_CONTROL_NEGOTIATE_URL',
+);
 
 class EventDetailPage extends StatefulWidget {
   final EventDTO event;
@@ -87,12 +87,14 @@ class _EventDetailPageState extends State<EventDetailPage> {
         endpoint: acsTokenUrl,
         httpClient: _httpClient,
       );
-      final receiver = widget.createReceiver?.call() ?? ACSAudioReceiver(
-        eventId: widget.event.id,
-        fetchToken: () async => tokenService.fetchToken(
-          await MicrosoftAuthService.acquireIdToken(),
-        ),
-      );
+      final receiver =
+          widget.createReceiver?.call() ??
+          ACSAudioReceiver(
+            eventId: widget.event.id,
+            fetchToken: () async => tokenService.fetchToken(
+              await MicrosoftAuthService.acquireIdToken(),
+            ),
+          );
 
       _receiver = receiver;
 
@@ -100,15 +102,20 @@ class _EventDetailPageState extends State<EventDetailPage> {
         if (_disposed) return;
         final revision = ++_audioRevision;
         final stream = receiver.remoteWebStream;
-        _audioQueue = _audioQueue.then((_) async {
-          if (_disposed || _receiver != receiver || revision != _audioRevision) return;
-          await _stopTranscription();
-          if (stream != null) await _startTranscription(receiver);
-        }).catchError((Object error) {
-          if (mounted && !_disposed) {
-            setState(() => _error = 'Transcription failed: $error');
-          }
-        });
+        _audioQueue = _audioQueue
+            .then((_) async {
+              if (_disposed ||
+                  _receiver != receiver ||
+                  revision != _audioRevision)
+                return;
+              await _stopTranscription();
+              if (stream != null) await _startTranscription(receiver);
+            })
+            .catchError((Object error) {
+              if (mounted && !_disposed) {
+                setState(() => _error = 'Transcription failed: $error');
+              }
+            });
       }
 
       _audioListener = onAudioChanged;
@@ -137,7 +144,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
   }
 
   Future<void> _connectControl() async {
-    final control = widget.createControlChannel?.call() ??
+    final control =
+        widget.createControlChannel?.call() ??
         (streamControlNegotiateUrl.isEmpty
             ? null
             : StreamControlChannel(
@@ -154,7 +162,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
       await control.connect();
     } catch (error) {
       debugPrint('Stream control connection failed: $error');
-      if (!_disposed) control.error.value = 'Remote control unavailable: $error';
+      if (!_disposed)
+        control.error.value = 'Remote control unavailable: $error';
     }
   }
 
@@ -187,7 +196,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
     try {
       await control.send(action);
     } catch (error) {
-      if (mounted) setState(() => _error = 'Remote ${action.name} failed: $error');
+      if (mounted)
+        setState(() => _error = 'Remote ${action.name} failed: $error');
     } finally {
       if (mounted) setState(() => _sendingControl = false);
     }
@@ -195,8 +205,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
 
   Future<void> _startTranscription(ACSAudioReceiver receiver) async {
     if (_disposed ||
-      (widget.fetchSpeechToken == null &&
-        (speechTokenUrl.isEmpty || supabaseUrl.isEmpty || supabaseAnonKey.isEmpty)) ||
+        (widget.fetchSpeechToken == null &&
+            (speechTokenUrl.isEmpty ||
+                supabaseUrl.isEmpty ||
+                supabaseAnonKey.isEmpty)) ||
         _startingTranscription ||
         (_transcriber != null && !_transcriber!.isStopped)) {
       return;
@@ -235,16 +247,14 @@ class _EventDetailPageState extends State<EventDetailPage> {
 
       final token = await fetchToken();
 
-        if (_disposed || !mounted || _receiver != receiver ||
-            !identical(stream, receiver.remoteWebStream)) {
-          return;
-        }
+      if (_disposed ||
+          !mounted ||
+          _receiver != receiver ||
+          !identical(stream, receiver.remoteWebStream)) {
+        return;
+      }
 
-      await transcriber.start(
-        stream,
-        token: token,
-        refreshToken: fetchToken,
-      );
+      await transcriber.start(stream, token: token, refreshToken: fetchToken);
     } catch (error) {
       debugPrint('Speech transcription failed: $error');
 
@@ -312,9 +322,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
       transcriber.dispose();
     }
 
-    unawaited(
-      receiver?.stop() ?? Future<void>.value(),
-    );
+    unawaited(receiver?.stop() ?? Future<void>.value());
     unawaited(_control?.close() ?? Future<void>.value());
 
     _httpClient.close();
@@ -351,28 +359,22 @@ class _EventDetailPageState extends State<EventDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              event.title,
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
+            Text(event.title, style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text('${event.date} · ${event.timeRange}'),
             const SizedBox(height: 4),
             Text('Speakers: ${event.speakers.join(', ')}'),
             const Divider(height: 32),
-            if (_connecting)
-              const LinearProgressIndicator(),
+            if (_connecting) const LinearProgressIndicator(),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   _error!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
-            if (receiver != null) ... [
+            if (receiver != null) ...[
               ValueListenableBuilder(
                 valueListenable: receiver.state,
                 builder: (context, state, _) {
@@ -395,8 +397,7 @@ class _EventDetailPageState extends State<EventDetailPage> {
               ),
               ValueListenableBuilder(
                 valueListenable: receiver.state,
-                builder: (_, state, _) =>
-                    state == ReceiverState.connected
+                builder: (_, state, _) => state == ReceiverState.connected
                     ? Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: ValueListenableBuilder(
@@ -413,22 +414,23 @@ class _EventDetailPageState extends State<EventDetailPage> {
                                       await receiver.pauseStreaming();
                                     }
                                   } catch (error) {
-                                    if (mounted) setState(() => _error = 'Playback failed: $error');
+                                    if (mounted)
+                                      setState(
+                                        () =>
+                                            _error = 'Playback failed: $error',
+                                      );
                                   }
                                 },
                                 icon: Icon(
-                                  paused
-                                      ? Icons.volume_up
-                                      : Icons.volume_off,
+                                  paused ? Icons.volume_up : Icons.volume_off,
                                 ),
-                                label: Text(
-                                  paused ? 'Unmute' : 'Mute',
-                                ),
+                                label: Text(paused ? 'Unmute' : 'Mute'),
                               ),
                               FilledButton.tonalIcon(
                                 onPressed: () async {
                                   await _disconnect();
-                                  if (context.mounted) Navigator.of(context).pop();
+                                  if (context.mounted)
+                                    Navigator.of(context).pop();
                                 },
                                 icon: const Icon(Icons.exit_to_app),
                                 label: const Text('Leave stream'),
@@ -443,52 +445,203 @@ class _EventDetailPageState extends State<EventDetailPage> {
                 valueListenable: receiver.error,
                 builder: (context, error, _) => error == null
                     ? const SizedBox.shrink()
-                    : Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    : Text(
+                        error,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
               ),
             ],
             if (control != null)
               _buildBroadcasterControls(control, receiver?.state),
             const SizedBox(height: 16),
-            Text(
-              'Live Transcript',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            if (transcriber != null)
-              ValueListenableBuilder(
-                valueListenable: transcriber.status,
-                builder: (context, status, _) => Text(
-                  status,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              )
-            else
-              Text(
-                'Waiting for broadcaster audio',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            const SizedBox(height: 8),
             Expanded(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: transcriber == null
-                      ? const Center(
-                          child: Text('Transcript will appear here'),
-                        )
-                      : ValueListenableBuilder(
-                          valueListenable: transcriber.transcript,
-                          builder: (context, text, _) {
-                            return SingleChildScrollView(
-                              reverse: true,
-                              child: SelectableText(
-                                text.isEmpty
-                                    ? 'Transcript will appear here'
-                                    : text,
-                              ),
-                            );
-                          },
-                        ),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLowest,
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 17,
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.secondaryContainer,
+                            child: Icon(
+                              Icons.graphic_eq,
+                              size: 18,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSecondaryContainer,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Live transcript',
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                                if (transcriber != null)
+                                  ValueListenableBuilder(
+                                    valueListenable: transcriber.status,
+                                    builder: (context, status, _) => Text(
+                                      status,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  )
+                                else
+                                  Text(
+                                    'Waiting for broadcaster audio',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                    Expanded(
+                      child: transcriber == null
+                          ? const Center(
+                              child: Text('Waiting for broadcaster audio'),
+                            )
+                          : ValueListenableBuilder(
+                              valueListenable: transcriber.transcript,
+                              builder: (context, entries, _) {
+                                final messages = entries
+                                    .where((entry) => entry.text.isNotEmpty)
+                                    .toList();
+                                if (messages.isEmpty) {
+                                  return const Center(
+                                    child: Text('Transcript will appear here'),
+                                  );
+                                }
+                                return ListView.builder(
+                                  reverse: true,
+                                  padding: const EdgeInsets.all(16),
+                                  itemCount: messages.length,
+                                  itemBuilder: (context, index) {
+                                    final message =
+                                        messages[messages.length - index - 1];
+                                    return Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: 12,
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 13,
+                                            backgroundColor: Theme.of(
+                                              context,
+                                            ).colorScheme.secondaryContainer,
+                                            child: Icon(
+                                              Icons.graphic_eq,
+                                              size: 14,
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSecondaryContainer,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Flexible(
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 14,
+                                                    vertical: 10,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .surfaceContainerLow,
+                                                border: Border.all(
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.outlineVariant,
+                                                ),
+                                                borderRadius:
+                                                    const BorderRadius.only(
+                                                      topLeft: Radius.circular(
+                                                        4,
+                                                      ),
+                                                      topRight: Radius.circular(
+                                                        12,
+                                                      ),
+                                                      bottomRight:
+                                                          Radius.circular(12),
+                                                      bottomLeft:
+                                                          Radius.circular(12),
+                                                    ),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    message.speakerLabel,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .labelSmall
+                                                        ?.copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color: Theme.of(
+                                                            context,
+                                                          ).colorScheme.primary,
+                                                        ),
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  SelectableText(message.text),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -511,13 +664,15 @@ class _EventDetailPageState extends State<EventDetailPage> {
       ]),
       builder: (context, _) {
         final state = control.broadcasterState.value;
-        final canStart = control.connected.value &&
+        final canStart =
+            control.connected.value &&
             !_sendingControl &&
-          (audioState?.value != ReceiverState.connected ||
-            state == BroadcasterStreamState.stopped) &&
+            (audioState?.value != ReceiverState.connected ||
+                state == BroadcasterStreamState.stopped) &&
             (state == BroadcasterStreamState.unknown ||
                 state == BroadcasterStreamState.stopped);
-        final enabled = control.connected.value &&
+        final enabled =
+            control.connected.value &&
             audioState?.value == ReceiverState.connected &&
             !_sendingControl &&
             state != BroadcasterStreamState.stopped;
@@ -529,7 +684,9 @@ class _EventDetailPageState extends State<EventDetailPage> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(
-                control.connected.value ? Icons.settings_remote : Icons.portable_wifi_off,
+                control.connected.value
+                    ? Icons.settings_remote
+                    : Icons.portable_wifi_off,
               ),
               title: const Text('Broadcaster controls'),
               subtitle: Text(switch (state) {
@@ -537,7 +694,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                 BroadcasterStreamState.unknown => 'Remote control ready',
                 BroadcasterStreamState.live => 'Broadcaster is live',
                 BroadcasterStreamState.paused => 'Broadcaster is paused',
-                BroadcasterStreamState.stopped => 'Broadcaster stopped streaming',
+                BroadcasterStreamState.stopped =>
+                  'Broadcaster stopped streaming',
               }),
             ),
             Wrap(
@@ -553,9 +711,11 @@ class _EventDetailPageState extends State<EventDetailPage> {
                 ),
                 FilledButton.icon(
                   onPressed: enabled
-                      ? () => _sendControl(paused
-                          ? StreamControlAction.resume
-                          : StreamControlAction.pause)
+                      ? () => _sendControl(
+                          paused
+                              ? StreamControlAction.resume
+                              : StreamControlAction.pause,
+                        )
                       : null,
                   icon: Icon(paused ? Icons.play_arrow : Icons.pause),
                   label: Text(paused ? 'Resume stream' : 'Pause stream'),

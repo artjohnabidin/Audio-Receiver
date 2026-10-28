@@ -22,11 +22,13 @@ external JSBoolean _updateSpeechToken(JSString token);
 external JSPromise<JSAny?> _stopSpeechTranscription();
 
 class SpeechTranscriber {
-  final transcript = ValueNotifier<String>('');
+  final transcript = ValueNotifier<List<TranscriptEntry>>([]);
   final status = ValueNotifier<String>('Idle');
 
-  String _finalTranscript = '';
-  String _partialTranscript = '';
+  final _transcriptEntries = <TranscriptEntry>[];
+  TranscriptEntry? _partialTranscript;
+  String? _lastRecognizedSpeakerId;
+  String? _fallbackSpeakerId;
   Timer? _tokenRefreshTimer;
   bool _stopped = true;
   bool _disposed = false;
@@ -41,9 +43,10 @@ class SpeechTranscriber {
     _stopped = false;
     status.value = 'Connecting to Azure Speech';
     try {
-      final onTranscript = (JSString text, JSBoolean isFinal) {
-        _handleTranscript(text.toDart, isFinal.toDart);
-      }.toJS;
+      final onTranscript =
+          (JSString text, JSString speakerId, JSBoolean isFinal) {
+            _handleTranscript(text.toDart, speakerId.toDart, isFinal.toDart);
+          }.toJS;
       final onStatus = (JSString value) {
         if (!_disposed && !_stopped) status.value = value.toDart;
       }.toJS;
@@ -69,13 +72,15 @@ class SpeechTranscriber {
     _stopped = true;
     _tokenRefreshTimer?.cancel();
     _tokenRefreshTimer = null;
-    if (_partialTranscript.isNotEmpty) {
-      _finalTranscript = _finalTranscript.isEmpty
-          ? _partialTranscript
-          : '$_finalTranscript\n$_partialTranscript';
-      _partialTranscript = '';
-      transcript.value = _finalTranscript;
+    final partial = _partialTranscript;
+    if (partial != null) {
+      _transcriptEntries.add(partial.asFinal);
+      _partialTranscript = null;
     }
+    for (var index = 0; index < _transcriptEntries.length; index++) {
+      _transcriptEntries[index] = _transcriptEntries[index].asFinal;
+    }
+    _publishTranscript();
     await _stopSpeechTranscription().toDart;
     if (!_disposed) status.value = 'Stopped';
   }
@@ -87,23 +92,101 @@ class SpeechTranscriber {
     status.dispose();
   }
 
-  void _handleTranscript(String text, bool isFinal) {
+  void _handleTranscript(String text, String speakerId, bool isFinal) {
     if (_disposed || _stopped) return;
     final cleaned = text.trim();
+    final trimmedSpeakerId = speakerId.trim();
+    final recognizedSpeakerId =
+        trimmedSpeakerId.isEmpty || trimmedSpeakerId.toLowerCase() == 'unknown'
+        ? null
+        : trimmedSpeakerId;
+    if (recognizedSpeakerId != null) {
+      _lastRecognizedSpeakerId = recognizedSpeakerId;
+    }
+    final activePartial = _partialTranscript;
+    final resolvedSpeakerId =
+        recognizedSpeakerId ??
+        activePartial?.speakerId ??
+        _lastRecognizedSpeakerId;
+    final fallbackSpeakerId = recognizedSpeakerId == null
+        ? activePartial?.fallbackSpeakerId ??
+              (resolvedSpeakerId == null
+                  ? _fallbackSpeakerId ??= 'Guest-1'
+                  : null)
+        : null;
     if (isFinal) {
       if (cleaned.isNotEmpty) {
-        _finalTranscript = _finalTranscript.isEmpty
-            ? cleaned
-            : '$_finalTranscript\n$cleaned';
+        final finalEntry = TranscriptEntry(
+          text: cleaned,
+          speakerId: resolvedSpeakerId,
+          fallbackSpeakerId: fallbackSpeakerId,
+          isFinal: true,
+        );
+        if (activePartial != null &&
+            _isSameSpeaker(
+              activePartial,
+              resolvedSpeakerId,
+              fallbackSpeakerId,
+            )) {
+          _transcriptEntries.add(finalEntry);
+          _partialTranscript = null;
+        } else {
+          final pendingIndex = _transcriptEntries.lastIndexWhere(
+            (entry) =>
+                !entry.isFinal &&
+                _isSameSpeaker(entry, resolvedSpeakerId, fallbackSpeakerId),
+          );
+          if (pendingIndex >= 0) {
+            _transcriptEntries[pendingIndex] = finalEntry;
+          } else {
+            _transcriptEntries.add(finalEntry);
+          }
+        }
+      } else if (activePartial != null &&
+          _isSameSpeaker(activePartial, resolvedSpeakerId, fallbackSpeakerId)) {
+        _partialTranscript = null;
       }
-      _partialTranscript = '';
     } else {
-      _partialTranscript = cleaned;
+      if (cleaned.isNotEmpty) {
+        if (activePartial != null &&
+            !_isSameSpeaker(
+              activePartial,
+              resolvedSpeakerId,
+              fallbackSpeakerId,
+            )) {
+          _transcriptEntries.add(activePartial);
+        }
+        _partialTranscript = TranscriptEntry(
+          text: cleaned,
+          speakerId: resolvedSpeakerId,
+          fallbackSpeakerId: fallbackSpeakerId,
+          isFinal: false,
+        );
+      } else if (activePartial != null &&
+          _isSameSpeaker(activePartial, resolvedSpeakerId, fallbackSpeakerId)) {
+        _partialTranscript = null;
+      }
     }
-    transcript.value = [
-      _finalTranscript,
-      _partialTranscript,
-    ].where((part) => part.isNotEmpty).join('\n');
+    _publishTranscript();
+  }
+
+  bool _isSameSpeaker(
+    TranscriptEntry entry,
+    String? speakerId,
+    String? fallbackSpeakerId,
+  ) =>
+      (speakerId != null &&
+          (entry.speakerId == speakerId ||
+              entry.fallbackSpeakerId == speakerId)) ||
+      (fallbackSpeakerId != null &&
+          (entry.speakerId == fallbackSpeakerId ||
+              entry.fallbackSpeakerId == fallbackSpeakerId));
+
+  void _publishTranscript() {
+    transcript.value = List.unmodifiable([
+      ..._transcriptEntries,
+      if (_partialTranscript != null) _partialTranscript!,
+    ]);
   }
 
   void _scheduleTokenRefresh(
@@ -130,4 +213,32 @@ class SpeechTranscriber {
       }
     });
   }
+}
+
+@immutable
+class TranscriptEntry {
+  const TranscriptEntry({
+    required this.text,
+    required this.isFinal,
+    this.speakerId,
+    this.fallbackSpeakerId,
+  });
+
+  final String text;
+  final String? speakerId;
+  final String? fallbackSpeakerId;
+  final bool isFinal;
+
+  String get speakerLabel {
+    final id = speakerId ?? fallbackSpeakerId ?? 'Guest-1';
+    final match = RegExp(r'^Guest-(\d+)$').firstMatch(id);
+    return match == null ? id : 'Guest ${match.group(1)}';
+  }
+
+  TranscriptEntry get asFinal => TranscriptEntry(
+    text: text,
+    speakerId: speakerId,
+    fallbackSpeakerId: fallbackSpeakerId,
+    isFinal: true,
+  );
 }

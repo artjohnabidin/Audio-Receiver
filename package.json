@@ -2,7 +2,7 @@
 	"private": true,
 	"scripts": {
 		"build": "esbuild web/acs_entry.js --bundle --format=iife --platform=browser --outfile=web/acs_receiver.bundle.js",
-		"test": "node --test test/acs_receiver.test.mjs"
+		"test": "node --test test/*.test.mjs"
 	},
 	"dependencies": {
 		"@azure/communication-calling": "2.0.0",

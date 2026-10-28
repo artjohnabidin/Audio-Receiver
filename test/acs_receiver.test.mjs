@@ -54,7 +54,7 @@ function fixture({ agentState = 'Connected' } = {}) {
   };
 }
 
-test('joins muted, waits for broadcaster, handles audio and leaves only locally', async () => {
+test('another listener does not look like the broadcaster or provide audio', async () => {
   const context = fixture();
   await context.receiver.start('legacy-event', async () => 'token');
   assert.equal(context.join.locator.groupId, fallbackGroupId);
@@ -64,8 +64,28 @@ test('joins muted, waits for broadcaster, handles audio and leaves only locally'
   assert.equal(context.states.at(-1), 'waitingForBroadcaster');
   assert.equal(context.receiver.getDiagnostics().callState, 'Connected');
   assert.deepEqual(context.receiver.getDiagnostics().remoteParticipants, []);
-  const participant = Object.assign(new EventEmitter(), { state: 'Connected' });
-  context.call.remoteParticipants = [participant];
+  const otherListener = Object.assign(new EventEmitter(), {
+    state: 'Connected', displayName: 'Audio listener',
+  });
+  context.call.remoteParticipants = [otherListener];
+  context.call.emit('remoteParticipantsUpdated');
+  assert.equal(context.states.at(-1), 'waitingForBroadcaster');
+  const listenerStream = {};
+  context.call.remoteAudioStreams = [{ getMediaStream: async () => listenerStream }];
+  context.call.emit('remoteAudioStreamsUpdated');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(context.streams.at(-1), null);
+  otherListener.displayName = 'Mobile broadcaster';
+  otherListener.emit('displayNameChanged');
+  assert.equal(context.states.at(-1), 'connected');
+  otherListener.displayName = 'Audio listener';
+  otherListener.emit('displayNameChanged');
+  assert.equal(context.states.at(-1), 'waitingForBroadcaster');
+
+  const broadcaster = Object.assign(new EventEmitter(), {
+    state: 'Connected', displayName: 'Mobile broadcaster',
+  });
+  context.call.remoteParticipants = [otherListener, broadcaster];
   context.call.emit('remoteParticipantsUpdated');
   assert.equal(context.states.at(-1), 'connected');
   const stream = {};
@@ -73,10 +93,10 @@ test('joins muted, waits for broadcaster, handles audio and leaves only locally'
   context.call.emit('remoteAudioStreamsUpdated');
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(context.streams.at(-1), stream);
-  context.call.remoteParticipants = [];
+  context.call.remoteParticipants = [otherListener];
   context.call.emit('remoteParticipantsUpdated');
   assert.equal(context.states.at(-1), 'waitingForBroadcaster');
-  context.call.remoteParticipants = [participant];
+  context.call.remoteParticipants = [broadcaster];
   context.call.emit('remoteParticipantsUpdated');
   assert.equal(context.states.at(-1), 'connected');
   await context.receiver.setPlaybackMuted(true);
@@ -90,13 +110,16 @@ test('joins muted, waits for broadcaster, handles audio and leaves only locally'
   assert.equal(context.clientDisposed, true);
   assert.equal(context.silentStreamDisposed, true);
   assert.equal(context.call.listenerCount('stateChanged'), 0);
-  assert.equal(participant.listenerCount('stateChanged'), 0);
+  assert.equal(otherListener.listenerCount('stateChanged'), 0);
+  assert.equal(broadcaster.listenerCount('stateChanged'), 0);
 });
 
 test('attaches audio when the mobile broadcaster is already live', async () => {
   const context = fixture();
   const stream = {};
-  context.call.remoteParticipants = [Object.assign(new EventEmitter(), { state: 'Connected' })];
+  context.call.remoteParticipants = [Object.assign(new EventEmitter(), {
+    state: 'Connected', displayName: 'Mobile broadcaster',
+  })];
   context.call.remoteAudioStreams = [{ getMediaStream: async () => stream }];
   await context.receiver.start('event-1', async () => 'token');
   assert.equal(context.states.at(-1), 'connected');
@@ -108,7 +131,9 @@ test('attaches audio when the mobile broadcaster is already live', async () => {
 test('attaches audio when the broadcaster connects after the listener', async () => {
   const context = fixture();
   await context.receiver.start('event-1', async () => 'token');
-  const participant = Object.assign(new EventEmitter(), { state: 'Connecting' });
+  const participant = Object.assign(new EventEmitter(), {
+    state: 'Connecting', displayName: 'Mobile broadcaster',
+  });
   context.call.remoteParticipants = [participant];
   context.call.emit('remoteParticipantsUpdated');
   assert.equal(context.states.at(-1), 'waitingForBroadcaster');
@@ -188,6 +213,9 @@ test('disconnection clears audio instead of restoring a stale stream', async () 
 test('late incoming audio cannot reactivate a stopped listener', async () => {
   const context = fixture();
   await context.receiver.start('event', async () => 'token');
+  context.call.remoteParticipants = [Object.assign(new EventEmitter(), {
+    state: 'Connected', displayName: 'Mobile broadcaster',
+  })];
   let complete;
   context.call.remoteAudioStreams = [{ getMediaStream: () => new Promise(resolve => { complete = resolve; }) }];
   context.call.emit('remoteAudioStreamsUpdated');

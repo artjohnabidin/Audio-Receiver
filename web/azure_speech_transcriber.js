@@ -11,7 +11,7 @@
   function closeRecognizer(session) {
     session.stopped = true;
     try {
-      session.recognizer?.close();
+      session.transcriber?.close();
     } finally {
       session.audioConfig?.close?.();
     }
@@ -31,7 +31,7 @@
         return;
       }
 
-      session.recognizer.stopContinuousRecognitionAsync(
+      session.transcriber.stopTranscribingAsync(
         () => {
           closeRecognizer(session);
           resolve();
@@ -93,30 +93,35 @@
     }
 
     try {
-      const speechConfig =
-      sdk.SpeechConfig.fromAuthorizationToken(token, region);
+      const speechEndpoint = new URL(
+        `wss://${region}.stt.speech.microsoft.com/speech/universal/v2`
+      );
+      const speechConfig = sdk.SpeechConfig.fromEndpoint(speechEndpoint);
+      speechConfig.authorizationToken = token;
 
-    // Enable language detection throughout the recognition session.
-    speechConfig.setProperty(
-      sdk.PropertyId.SpeechServiceConnection_LanguageIdMode,
-      'Continuous'
-    );
+      speechConfig.setProperty(
+        sdk.PropertyId.SpeechServiceConnection_LanguageIdMode,
+        'Continuous'
+      );
+      speechConfig.setProperty(
+        sdk.PropertyId.SpeechServiceResponse_DiarizeIntermediateResults,
+        'true'
+      );
 
-    const autoDetect =
-      sdk.AutoDetectSourceLanguageConfig.fromLanguages([
+      const autoDetect = sdk.AutoDetectSourceLanguageConfig.fromLanguages([
         'ja-JP',
         'en-US',
       ]);
 
-    session.audioConfig = sdk.AudioConfig.fromStreamInput(stream);
+      session.audioConfig = sdk.AudioConfig.fromStreamInput(stream);
 
-    session.recognizer = sdk.SpeechRecognizer.FromConfig(
-      speechConfig,
-      autoDetect,
-      session.audioConfig
-    );
+      session.transcriber = sdk.ConversationTranscriber.FromConfig(
+        speechConfig,
+        autoDetect,
+        session.audioConfig
+      );
 
-      session.recognizer.recognizing = (_sender, event) => {
+      session.transcriber.transcribing = (_sender, event) => {
         if (session.stopped) return;
 
         const result = event.result;
@@ -129,11 +134,11 @@
           console.info('[Azure Speech] Interim transcript:', text);
 
           setStatus(session, `Detected ${language}: ${text}`);
-          onTranscript(text, false);
+          onTranscript(text, result.speakerId ?? '', false);
         }
       };
 
-      session.recognizer.recognized = (_sender, event) => {
+      session.transcriber.transcribed = (_sender, event) => {
         if (session.stopped) {
           console.warn('[Azure] Callback ignored because session is stopped');
           return;
@@ -149,7 +154,7 @@
             console.info('[Azure Speech] Final transcript:', text);
 
             setStatus(session, `Detected ${language}: ${text}`);
-            onTranscript(text, true);
+            onTranscript(text, event.result.speakerId ?? '', true);
           }
         } else {
           console.info(
@@ -159,7 +164,7 @@
         }
       };
 
-      session.recognizer.canceled = (_sender, event) => {
+      session.transcriber.canceled = (_sender, event) => {
         if (session.stopped) return;
 
         console.error('[Azure Speech] Recognition canceled', {
@@ -182,7 +187,7 @@
       setStatus(session, 'Starting Japanese/English recognition');
 
       await new Promise((resolve, reject) => {
-        session.recognizer.startContinuousRecognitionAsync(
+        session.transcriber.startTranscribingAsync(
           resolve,
           reject
         );
@@ -214,7 +219,7 @@
       return false;
     }
 
-    activeSession.recognizer.authorizationToken = token;
+    activeSession.transcriber.authorizationToken = token;
     return true;
   }
 

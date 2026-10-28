@@ -74,8 +74,7 @@ class _ReceiverPageState extends State<ReceiverPage> {
   SpeechTranscriber? _transcriber;
   VoidCallback? _audioAvailabilityListener;
 
-  bool get _configured =>
-      acsTokenUrl.isNotEmpty;
+  bool get _configured => acsTokenUrl.isNotEmpty;
 
   @override
   void initState() {
@@ -147,34 +146,23 @@ class _ReceiverPageState extends State<ReceiverPage> {
                           const SizedBox(height: 8),
                           ...events.map((event) {
                             final selected = _selectedEvent?.id == event.id;
+                            final colors = Theme.of(context).colorScheme;
 
                             return Card(
+                              margin: const EdgeInsets.only(bottom: 12),
                               color: selected
-                                  ? Theme.of(
-                                      context,
-                                    ).colorScheme.primaryContainer
-                                  : null,
-                              child: ListTile(
-                                leading: Icon(
-                                  selected ? Icons.graphic_eq : Icons.event,
+                                  ? colors.primaryContainer
+                                  : colors.surfaceContainerLow,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: BorderSide(
+                                  color: selected
+                                      ? colors.primary
+                                      : colors.outlineVariant,
                                 ),
-                                title: Text.rich(
-                                  TextSpan(
-                                    text: event.title,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  '${event.date}\n'
-                                  '${event.timeRange}\n'
-                                  'Speakers: ${event.speakers.join(', ')}',
-                                ),
-                                isThreeLine: true,
-                                trailing: selected && receiver != null
-                                    ? const Icon(Icons.check_circle)
-                                    : const Icon(Icons.chevron_right),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: InkWell(
                                 onTap: () {
                                   setState(() {
                                     _selectedEvent = event;
@@ -201,6 +189,123 @@ class _ReceiverPageState extends State<ReceiverPage> {
                                     _selectedEvent = null;
                                   });
                                 },
+                                child: Padding(
+                                  padding: const EdgeInsets.all(14),
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: selected
+                                              ? colors.primary
+                                              : colors.secondaryContainer,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          selected
+                                              ? Icons.graphic_eq
+                                              : Icons.event,
+                                          color: selected
+                                              ? colors.onPrimary
+                                              : colors.onSecondaryContainer,
+                                          size: 21,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              event.title,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Wrap(
+                                              spacing: 12,
+                                              runSpacing: 4,
+                                              children: [
+                                                _EventMeta(
+                                                  icon: Icons.calendar_today,
+                                                  text: event.date,
+                                                ),
+                                                _EventMeta(
+                                                  icon: Icons.schedule,
+                                                  text: event.timeRange,
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Icon(
+                                                  Icons.people_outline,
+                                                  size: 15,
+                                                  color:
+                                                      colors.onSurfaceVariant,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    event.speakers.join(', '),
+                                                    maxLines: 2,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.copyWith(
+                                                          color: colors
+                                                              .onSurfaceVariant,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(
+                                              'ID ${event.id.toUpperCase()}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelSmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        colors.onSurfaceVariant,
+                                                  ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Icon(
+                                          selected && receiver != null
+                                              ? Icons.check_circle
+                                              : Icons.chevron_right,
+                                          color: selected
+                                              ? colors.primary
+                                              : colors.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             );
                           }),
@@ -213,6 +318,31 @@ class _ReceiverPageState extends State<ReceiverPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _EventMeta extends StatelessWidget {
+  const _EventMeta({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: colors.onSurfaceVariant),
+        const SizedBox(width: 6),
+        Text(
+          text,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+      ],
     );
   }
 }

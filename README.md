@@ -52,10 +52,11 @@ The listener matches `ACSAudioStreamService` and `ACSCallConfig` in the Swift ap
 	used by the active listener. Legacy transport files/tests remain inactive,
 	matching the broadcaster's retained legacy implementation.
 
-Connected/waiting status is based on ACS call and participant state. ACS group
-participants do not carry application roles, so another listener can also
-appear as a connected participant. These indicators are not backend event-live
-status or proof of audible microphone audio.
+Connected/waiting status excludes remote participants identified as `Audio
+listener`, the display name used by this web app, so another web listener does
+not appear as the broadcaster. ACS group participants do not carry application
+roles, so this is a client-side convention rather than backend event-live
+status. These indicators are not proof of audible microphone audio.
 
 ## Token Endpoint
 
