@@ -72,14 +72,7 @@ class SpeechTranscriber {
     _stopped = true;
     _tokenRefreshTimer?.cancel();
     _tokenRefreshTimer = null;
-    final partial = _partialTranscript;
-    if (partial != null) {
-      _transcriptEntries.add(partial.asFinal);
-      _partialTranscript = null;
-    }
-    for (var index = 0; index < _transcriptEntries.length; index++) {
-      _transcriptEntries[index] = _transcriptEntries[index].asFinal;
-    }
+    _partialTranscript = null;
     _publishTranscript();
     await _stopSpeechTranscription().toDart;
     if (!_disposed) status.value = 'Stopped';
@@ -116,46 +109,20 @@ class SpeechTranscriber {
         : null;
     if (isFinal) {
       if (cleaned.isNotEmpty) {
-        final finalEntry = TranscriptEntry(
-          text: cleaned,
-          speakerId: resolvedSpeakerId,
-          fallbackSpeakerId: fallbackSpeakerId,
-          isFinal: true,
+        _transcriptEntries.add(
+          TranscriptEntry(
+            text: cleaned,
+            speakerId: resolvedSpeakerId,
+            fallbackSpeakerId: fallbackSpeakerId,
+            isFinal: true,
+          ),
         );
-        if (activePartial != null &&
-            _isSameSpeaker(
-              activePartial,
-              resolvedSpeakerId,
-              fallbackSpeakerId,
-            )) {
-          _transcriptEntries.add(finalEntry);
-          _partialTranscript = null;
-        } else {
-          final pendingIndex = _transcriptEntries.lastIndexWhere(
-            (entry) =>
-                !entry.isFinal &&
-                _isSameSpeaker(entry, resolvedSpeakerId, fallbackSpeakerId),
-          );
-          if (pendingIndex >= 0) {
-            _transcriptEntries[pendingIndex] = finalEntry;
-          } else {
-            _transcriptEntries.add(finalEntry);
-          }
-        }
       } else if (activePartial != null &&
           _isSameSpeaker(activePartial, resolvedSpeakerId, fallbackSpeakerId)) {
         _partialTranscript = null;
       }
     } else {
       if (cleaned.isNotEmpty) {
-        if (activePartial != null &&
-            !_isSameSpeaker(
-              activePartial,
-              resolvedSpeakerId,
-              fallbackSpeakerId,
-            )) {
-          _transcriptEntries.add(activePartial);
-        }
         _partialTranscript = TranscriptEntry(
           text: cleaned,
           speakerId: resolvedSpeakerId,
@@ -183,10 +150,7 @@ class SpeechTranscriber {
               entry.fallbackSpeakerId == fallbackSpeakerId));
 
   void _publishTranscript() {
-    transcript.value = List.unmodifiable([
-      ..._transcriptEntries,
-      if (_partialTranscript != null) _partialTranscript!,
-    ]);
+    transcript.value = List.unmodifiable(_transcriptEntries);
   }
 
   void _scheduleTokenRefresh(

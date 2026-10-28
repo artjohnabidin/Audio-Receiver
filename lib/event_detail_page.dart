@@ -544,7 +544,11 @@ class _EventDetailPageState extends State<EventDetailPage> {
                               valueListenable: transcriber.transcript,
                               builder: (context, entries, _) {
                                 final messages = entries
-                                    .where((entry) => entry.text.isNotEmpty)
+                                    .where(
+                                      (entry) =>
+                                          entry.isFinal &&
+                                          entry.text.isNotEmpty,
+                                    )
                                     .toList();
                                 if (messages.isEmpty) {
                                   return const Center(

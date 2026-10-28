@@ -263,6 +263,7 @@ void main() {
     );
     globalContext.setProperty('acsAudioReceiver'.toJS, factory);
     final speech = JSObject();
+    late JSFunction speechCallback;
     speech.setProperty(
       'start'.toJS,
       ((
@@ -273,21 +274,28 @@ void main() {
             JSFunction status,
           ) {
             transcribedStreams.add(stream);
+            speechCallback = transcript;
             transcript.callAsFunction(
               null,
-              'Interim phrase'.toJS,
+              'When I see students'.toJS,
               'Guest-1'.toJS,
               false.toJS,
             );
             transcript.callAsFunction(
               null,
-              'Live keynote transcript'.toJS,
+              'realize they are studying'.toJS,
+              'Guest-2'.toJS,
+              false.toJS,
+            );
+            transcript.callAsFunction(
+              null,
+              'When I see students learning, I think the biggest mistake'.toJS,
               'Guest-1'.toJS,
               true.toJS,
             );
             transcript.callAsFunction(
               null,
-              'A second recognized phrase'.toJS,
+              'Realize they are studying to be a doctor'.toJS,
               'Guest-2'.toJS,
               true.toJS,
             );
@@ -333,11 +341,32 @@ void main() {
     });
     await tester.pump();
     expect(transcribedStreams, [secondStream]);
-    expect(find.text('Live keynote transcript'), findsOneWidget);
-    expect(find.text('A second recognized phrase'), findsOneWidget);
-    expect(find.text('Interim phrase'), findsNothing);
+    expect(
+      find.text('When I see students learning, I think the biggest mistake'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Realize they are studying to be a doctor'),
+      findsOneWidget,
+    );
+    expect(find.text('When I see students'), findsNothing);
+    expect(find.text('realize they are studying'), findsNothing);
     expect(find.text('Guest 1'), findsOneWidget);
     expect(find.text('Guest 2'), findsOneWidget);
+
+    speechCallback.callAsFunction(
+      null,
+      'Unfinished phrase'.toJS,
+      'Guest-1'.toJS,
+      false.toJS,
+    );
+    audioCallback.callAsFunction(null, null);
+    await tester.runAsync(() async {
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pump();
+    expect(find.text('Unfinished phrase'), findsNothing);
+
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
